@@ -4,3 +4,5 @@ matplotlib
 python-docx
 xlsxwriter
 openpyxl
+gspread
+oauth2client
