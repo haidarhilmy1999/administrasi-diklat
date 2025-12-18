@@ -224,7 +224,7 @@ if uploaded_file:
         df_raw = df_raw.rename(columns={
             'NAMA PEGAWAI': 'NAMA', 
             'PANGKAT - GOL': 'PANGKAT', 
-            'PANGKAT GOL': 'PANGKAT', # Jaga-jaga variasi nama kolom
+            'PANGKAT GOL': 'PANGKAT',
             'SATUAN KERJA': 'SATKER'
         })
         # Standarisasi kolom jadi huruf besar & tanpa spasi
@@ -281,19 +281,16 @@ if uploaded_file:
                     top_satker.plot(kind='barh', ax=ax, color='#3498db')
                     ax.set_ylabel("")
                     st.pyplot(fig)
-                    plt.close(fig) # Hemat memori
+                    plt.close(fig) 
                 except Exception as e: st.warning(f"Gagal memuat grafik Satker: {e}")
             
             with c_g2:
                 st.subheader("👮 Komposisi Pangkat")
                 try:
                     # Cek kolom Pangkat
-                    if 'PANGKAT' in df_viz.columns:
-                        pangkat_col = 'PANGKAT'
-                    elif 'PANGKAT_GOL' in df_viz.columns: # Fallback
-                        pangkat_col = 'PANGKAT_GOL'
-                    else:
-                        pangkat_col = None
+                    pangkat_col = None
+                    if 'PANGKAT' in df_viz.columns: pangkat_col = 'PANGKAT'
+                    elif 'PANGKAT_GOL' in df_viz.columns: pangkat_col = 'PANGKAT_GOL'
                     
                     if pangkat_col:
                         pangkat_counts = df_viz[pangkat_col].value_counts()
@@ -308,10 +305,29 @@ if uploaded_file:
 
             st.markdown("---")
 
-            # 3. GRAFIK BARIS 2 (Lokasi & Tanggal - BARU)
+            # 3. GRAFIK BARIS 2 (Lokasi & Tanggal)
             c_g3, c_g4 = st.columns(2)
 
             with c_g3:
                 st.subheader("📍 Lokasi Pelaksanaan")
                 try:
-                    if 'TEMPAT' in
+                    if 'TEMPAT' in df_viz.columns:
+                        tempat_counts = df_viz['TEMPAT'].value_counts()
+                        st.bar_chart(tempat_counts)
+                    else: st.info("Kolom 'Tempat' tidak tersedia.")
+                except: st.warning("Gagal memuat grafik Lokasi.")
+
+            with c_g4:
+                st.subheader("📅 Tren Tanggal Pelatihan")
+                try:
+                    if 'TANGGAL_PELATIHAN' in df_viz.columns:
+                        tgl_counts = df_viz['TANGGAL_PELATIHAN'].value_counts().sort_index()
+                        st.line_chart(tgl_counts)
+                    else: st.info("Kolom 'Tanggal Pelatihan' tidak tersedia.")
+                except: st.warning("Gagal memuat grafik Tren Tanggal.")
+
+    except Exception as e:
+        st.error(f"Error Membaca File: {e}")
+        st.warning("Pastikan file Excel menggunakan format yang benar (Download Template jika ragu).")
+else:
+    st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
