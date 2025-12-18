@@ -255,8 +255,8 @@ with st.sidebar:
     
     # --- UPDATE: FIELD INPUT NOMOR ND ---
     st.markdown("### 📝 Nomor Nota Dinas")
-    nomor_nd = st.text_input("Nomor ND", "ND-...../...../2025")
-    tanggal_nd = st.text_input("Tanggal ND", "..... ................. 2025")
+    nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
+    tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
 
     st.markdown("---")
     if st.button("📥 Template"):
@@ -379,3 +379,4 @@ if uploaded_file:
         st.warning("Cek format file Excel Anda.")
 else:
     st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
+
