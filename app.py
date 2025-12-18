@@ -13,6 +13,20 @@ import datetime
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="📝")
 
+# --- [TAMBAHKAN KODE INI DI BAWAHNYA] ---
+hide_st_style = """
+            <style>
+            #MainMenu {visibility: hidden;} /* Menyembunyikan Menu Utama */
+            footer {visibility: hidden;}    /* Menyembunyikan Footer "Made with Streamlit" */
+            header {visibility: hidden;}    /* Menyembunyikan Header atas */
+            </style>
+            """
+st.markdown(hide_st_style, unsafe_allow_html=True)
+# ----------------------------------------
+
+# --- KONFIGURASI HALAMAN ---
+st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="📝")
+
 # --- CSS CUSTOM ---
 # Menyembunyikan Menu Default Streamlit agar terlihat seperti aplikasi profesional
 hide_st_style = """
@@ -155,4 +169,78 @@ if uploaded_file:
         df_raw.columns = [c.strip().upper().replace(" ", "_") for c in df_raw.columns]
         df_raw = df_raw.fillna("-")
         
-        tab1, tab2 = st.tabs(["📝 Generator (Live Editor)", "📊 Dashboard Anal
+        tab1, tab2 = st.tabs(["📝 Generator (Live Editor)", "📊 Dashboard Analitik"])
+        
+        # --- TAB 1: LIVE EDITOR + GENERATOR ---
+        with tab1:
+            st.success(f"File terbaca: {len(df_raw)} Baris Data.")
+            
+            st.markdown("### ✏️ Live Editor")
+            st.info("Silakan **klik dua kali** pada sel di bawah ini untuk mengoreksi data (Nama, NIP, dll) sebelum dokumen dibuat.")
+            
+            # FITUR UTAMA: DATA EDITOR
+            # num_rows="dynamic" memungkinkan user menambah/menghapus baris langsung di web
+            df_edited = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
+            
+            st.markdown("---")
+            col_act1, col_act2 = st.columns([1, 3])
+            
+            with col_act1:
+                # Tombol Generate menggunakan data hasil editan (df_edited), BUKAN data asli (df_raw)
+                generate_btn = st.button("⚡ GENERATE DOKUMEN", type="primary")
+            
+            if generate_btn:
+                with st.spinner("Sedang memproses data hasil edit..."):
+                    try:
+                        # Gunakan df_edited di sini
+                        docx_file = generate_word_in_memory(df_edited, nama_ttd, jabatan_ttd)
+                        
+                        ts = datetime.datetime.now().strftime("%H%M%S")
+                        filename = f"Lampiran_Peserta_{ts}.docx"
+                        
+                        st.success("✅ Dokumen Siap!")
+                        st.download_button(
+                            label="📥 Download Hasil (.docx)",
+                            data=docx_file,
+                            file_name=filename,
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
+                    except Exception as e:
+                        st.error(f"Terjadi Kesalahan: {e}")
+
+        # --- TAB 2: DASHBOARD (Menggunakan Data Hasil Edit Juga) ---
+        with tab2:
+            # Pastikan dashboard juga merefleksikan data yang baru diedit
+            df_viz = df_edited 
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total Peserta", len(df_viz))
+            col2.metric("Total Satker", df_viz['SATKER'].nunique())
+            col3.metric("Total Diklat", df_viz['JUDUL_PELATIHAN'].nunique())
+            
+            st.markdown("---")
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                st.subheader("Top Satuan Kerja")
+                try:
+                    top_satker = df_viz['SATKER'].value_counts().head(10).sort_values()
+                    fig, ax = plt.subplots()
+                    top_satker.plot(kind='barh', ax=ax, color='#3498db')
+                    st.pyplot(fig)
+                except: st.warning("Data Satker tidak valid untuk grafik.")
+            
+            with c2:
+                st.subheader("Komposisi Pangkat")
+                try:
+                    pangkat_counts = df_viz['PANGKAT'].value_counts()
+                    fig2, ax2 = plt.subplots()
+                    ax2.pie(pangkat_counts, labels=pangkat_counts.index, autopct='%1.1f%%', startangle=90)
+                    st.pyplot(fig2)
+                except: st.warning("Data Pangkat tidak valid untuk grafik.")
+
+    except Exception as e:
+        st.error(f"Gagal membaca file Excel: {e}")
+
+else:
+    st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
