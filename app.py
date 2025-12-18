@@ -31,7 +31,7 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
-# Nama Google Sheet yang Anda buat (Harus Persis sama)
+# Nama Google Sheet
 NAMA_GOOGLE_SHEET = "Database_Diklat_DJBC"
 
 # --- INISIALISASI RIWAYAT LOKAL ---
@@ -43,51 +43,49 @@ if 'history_log' not in st.session_state:
 # =============================================================================
 
 def connect_to_gsheet():
-    """Mencoba koneksi ke Google Sheets menggunakan Secrets"""
     try:
-        # Mengambil credentials dari Streamlit Secrets
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds_dict = dict(st.secrets["gcp_service_account"]) # Pastikan nama di Secrets sama
+        creds_dict = dict(st.secrets["gcp_service_account"])
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        
-        # Buka Sheet
         sheet = client.open(NAMA_GOOGLE_SHEET).sheet1
         return sheet
     except Exception as e:
         return None
 
 def save_to_cloud_database(df_input):
-    """Menyimpan data ke Google Sheets & Session State"""
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # 1. Persiapan Data
     try:
         data_to_save = df_input.copy()
-        col_map = {'NAMA': 'NAMA', 'NIP': 'NIP', 'JUDUL_PELATIHAN': 'DIKLAT', 'SATKER': 'SATKER'}
-        valid_cols = {k: v for k, v in col_map.items() if k in data_to_save.columns}
-        data_to_save = data_to_save[list(valid_cols.keys())].rename(columns=valid_cols)
-        data_to_save.insert(0, 'TIMESTAMP', current_time)
+        # Normalisasi nama kolom untuk database
+        target_cols = ['NAMA', 'NIP', 'JUDUL_PELATIHAN', 'SATKER']
+        final_cols = {}
+        for target in target_cols:
+            # Cari kolom yang mirip di data input
+            for col in data_to_save.columns:
+                if target in col: 
+                    final_cols[col] = target if target != 'JUDUL_PELATIHAN' else 'DIKLAT'
+                    break
         
-        # 2. Simpan ke Session State (Lokal) - Selalu Berhasil
-        st.session_state['history_log'] = pd.concat([st.session_state['history_log'], data_to_save], ignore_index=True)
-        
-        # 3. Simpan ke Google Sheets (Cloud)
-        sheet = connect_to_gsheet()
-        if sheet:
-            # Gspread butuh data bentuk List of Lists
-            data_list = data_to_save.values.tolist()
-            # Append rows (bisa banyak baris sekaligus)
-            sheet.append_rows(data_list)
-            return "Sukses Cloud"
-        else:
-            return "Gagal Koneksi Cloud"
+        if final_cols:
+            data_to_save = data_to_save[list(final_cols.keys())].rename(columns=final_cols)
+            data_to_save.insert(0, 'TIMESTAMP', current_time)
             
+            st.session_state['history_log'] = pd.concat([st.session_state['history_log'], data_to_save], ignore_index=True)
+            
+            sheet = connect_to_gsheet()
+            if sheet:
+                data_list = data_to_save.astype(str).values.tolist()
+                sheet.append_rows(data_list)
+                return "Sukses Cloud"
+            else:
+                return "Gagal Koneksi Cloud"
+        return "Kolom Data Tidak Lengkap"
     except Exception as e:
         return f"Error: {e}"
 
 # =============================================================================
-# 3. FUNGSI GENERATOR WORD (STANDARD)
+# 3. FUNGSI GENERATOR WORD
 # =============================================================================
 
 def set_repeat_table_header(row):
@@ -102,7 +100,6 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     section = doc.sections[0]; section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54)
     section.left_margin = Cm(2.54); section.right_margin = Cm(2.54)
 
-    # KOP
     header_table = doc.add_table(rows=4, cols=3); header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
     header_table.columns[0].width = Cm(1.5); header_table.columns[2].width = Cm(4.5)
     def isi_sel(r, c, text, size=9, bold=False):
@@ -129,8 +126,9 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     for i in range(5): 
         table.rows[0].cells[i].text = headers[i]
         table.rows[0].cells[i].width = widths[i]
+        table.rows[0].cells[i].paragraphs[0].runs[0].bold = True
 
-    vals = [row['NO'], row['NAMA'], row['NIP'], row['PANGKAT'], row['SATKER']]
+    vals = [row.get('NO','-'), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
     for i in range(5): table.rows[1].cells[i].text = str(vals[i])
 
     doc.add_paragraph(""); ttd_table = doc.add_table(rows=1, cols=2)
@@ -145,7 +143,7 @@ def generate_zip_files(df, nama_ttd, jabatan_ttd):
     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
         for idx, row in df.iterrows():
             judul = row.get('JUDUL_PELATIHAN', 'Diklat')
-            nama_file = f"{str(row['NAMA']).replace(' ', '_')}_{str(row['NIP'])}.docx"
+            nama_file = f"{str(row.get('NAMA','Peserta')).replace(' ', '_')}_{str(row.get('NIP','000'))}.docx"
             doc_buffer = create_single_document(row, judul, row.get('TANGGAL_PELATIHAN','-'), row.get('TEMPAT','-'), nama_ttd, jabatan_ttd)
             zip_file.writestr(nama_file, doc_buffer.getvalue())
     zip_buffer.seek(0)
@@ -153,16 +151,16 @@ def generate_zip_files(df, nama_ttd, jabatan_ttd):
 
 def generate_word_combined(df, nama_ttd, jabatan_ttd):
     output = io.BytesIO(); doc = Document()
-    # (Kode Simplified untuk Combined - Menggunakan logika page break)
     section = doc.sections[0]; section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54)
-    kelompok = df.groupby('JUDUL_PELATIHAN'); counter = 0
+    # Gunakan nama kolom yang ada
+    col_judul = 'JUDUL_PELATIHAN' if 'JUDUL_PELATIHAN' in df.columns else df.columns[0]
+    
+    kelompok = df.groupby(col_judul); counter = 0
     for judul, group in kelompok:
         for i, row in group.iterrows():
             counter += 1
-            # Disini kita panggil fungsi create single tapi manual inject content ke doc utama
-            # Agar kode pendek, saya pakai placeholder simple:
             p = doc.add_paragraph(f"LAMPIRAN II\nNota Dinas {jabatan_ttd}"); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            doc.add_paragraph(f"\nDAFTAR PESERTA: {judul}\nNama: {row['NAMA']}\nNIP: {row['NIP']}\n")
+            doc.add_paragraph(f"\nDAFTAR PESERTA: {judul}\nNama: {row.get('NAMA','-')}\nNIP: {row.get('NIP','-')}\n")
             doc.add_paragraph(f"\n\n{nama_ttd}"); doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
             if counter < len(df): doc.add_page_break()
     doc.save(output); output.seek(0)
@@ -182,14 +180,29 @@ with st.sidebar:
     jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
     st.markdown("---")
     if st.button("📥 Template"):
-        # Dummy Template logic
+        # Template download logic (simplified)
         pass
 
 if uploaded_file:
     try:
         df_raw = pd.read_excel(uploaded_file, dtype=str)
-        df_raw = df_raw.rename(columns={'NAMA PEGAWAI': 'NAMA', 'PANGKAT - GOL': 'PANGKAT', 'SATUAN KERJA': 'SATKER'})
-        df_raw.columns = [c.strip().upper().replace(" ", "_") for c in df_raw.columns]
+        
+        # --- NORMALISASI KOLOM (AGAR GRAFIK MUNCUL) ---
+        # Kita ubah paksa nama kolom agar sesuai standar kodingan
+        clean_cols = {}
+        for col in df_raw.columns:
+            upper_col = col.strip().upper().replace(" ", "_").replace("-", "_")
+            
+            if "NAMA" in upper_col: clean_cols[col] = "NAMA"
+            elif "NIP" in upper_col: clean_cols[col] = "NIP"
+            elif "PANGKAT" in upper_col or "GOL" in upper_col: clean_cols[col] = "PANGKAT"
+            elif "KERJA" in upper_col or "SATKER" in upper_col or "UNIT" in upper_col: clean_cols[col] = "SATKER"
+            elif "TEMPAT" in upper_col: clean_cols[col] = "TEMPAT"
+            elif "JUDUL" in upper_col or "DIKLAT" in upper_col: clean_cols[col] = "JUDUL_PELATIHAN"
+            elif "TANGGAL" in upper_col and "PELATIHAN" in upper_col: clean_cols[col] = "TANGGAL_PELATIHAN"
+            else: clean_cols[col] = upper_col # Tetap pakai nama asli jika tidak cocok
+            
+        df_raw = df_raw.rename(columns=clean_cols)
         df_raw = df_raw.fillna("-")
         
         tab1, tab2, tab3 = st.tabs(["📝 Generator", "📊 Dashboard", "☁️ Database"])
@@ -201,45 +214,93 @@ if uploaded_file:
             
             with col1:
                 if st.button("Generate Single Word"):
-                    with st.spinner("Menghubungkan ke Google Sheets..."):
-                        status = save_to_cloud_database(df_edited) # SIMPAN CLOUD
+                    with st.spinner("Proses Cloud..."):
+                        status = save_to_cloud_database(df_edited)
                         docx_file = generate_word_combined(df_edited, nama_ttd, jabatan_ttd)
                         st.download_button("📥 Download", docx_file, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-                        if "Sukses Cloud" in status: st.success("✅ Data tersimpan di Google Sheets!")
-                        elif "Gagal" in status: st.warning("⚠️ Dokumen jadi, tapi gagal simpan ke GSheets (Cek Koneksi).")
+                        if "Sukses" in status: st.success("Data tersimpan di Cloud!")
 
             with col2:
                 if st.button("Generate Bulk ZIP", type="primary"):
-                    with st.spinner("Menghubungkan ke Google Sheets..."):
-                        status = save_to_cloud_database(df_edited) # SIMPAN CLOUD
+                    with st.spinner("Proses Cloud..."):
+                        status = save_to_cloud_database(df_edited)
                         zip_file = generate_zip_files(df_edited, nama_ttd, jabatan_ttd)
                         st.download_button("📥 Download ZIP", zip_file, f"Arsip_{ts}.zip", "application/zip")
-                        if "Sukses Cloud" in status: st.success("✅ Data tersimpan di Google Sheets!")
+                        if "Sukses" in status: st.success("Data tersimpan di Cloud!")
 
         with tab2:
-            st.metric("Total Peserta", len(df_edited))
-            # ... (Kode grafik dashboard v1.3) ...
-        
+            df_viz = df_edited
+            
+            # CEK KOLOM (DEBUGGING)
+            with st.expander("ℹ️ Cek Kolom Terbaca (Klik disini jika grafik kosong)"):
+                st.write("Kolom yang dikenali sistem:", list(df_viz.columns))
+            
+            # --- METRIK UTAMA ---
+            col_satker = 'SATKER' if 'SATKER' in df_viz.columns else None
+            col_diklat = 'JUDUL_PELATIHAN' if 'JUDUL_PELATIHAN' in df_viz.columns else None
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Peserta", len(df_viz))
+            if col_satker: c2.metric("Total Satker", df_viz[col_satker].nunique())
+            if col_diklat: c3.metric("Total Diklat", df_viz[col_diklat].nunique())
+            
+            st.markdown("---")
+            
+            # --- GRAFIK 1: SATKER (NATIVE STREAMLIT CHART) ---
+            c_g1, c_g2 = st.columns(2)
+            
+            with c_g1:
+                st.subheader("🏢 Sebaran Satker")
+                if col_satker:
+                    # Menggunakan Native Chart (Lebih aman dari error)
+                    satker_counts = df_viz[col_satker].value_counts().head(10)
+                    st.bar_chart(satker_counts)
+                else:
+                    st.warning("⚠️ Kolom 'SATKER' / 'UNIT KERJA' tidak ditemukan.")
+
+            with c_g2:
+                st.subheader("👮 Komposisi Pangkat")
+                if 'PANGKAT' in df_viz.columns:
+                    pangkat_counts = df_viz['PANGKAT'].value_counts()
+                    fig2, ax2 = plt.subplots(figsize=(5,4))
+                    ax2.pie(pangkat_counts, labels=pangkat_counts.index, autopct='%1.1f%%', startangle=90)
+                    st.pyplot(fig2)
+                    plt.close(fig2)
+                else:
+                    st.warning("⚠️ Kolom 'PANGKAT' tidak ditemukan.")
+
+            st.markdown("---")
+            
+            # --- GRAFIK 2: LOKASI & TANGGAL ---
+            c_g3, c_g4 = st.columns(2)
+            
+            with c_g3:
+                st.subheader("📍 Lokasi")
+                if 'TEMPAT' in df_viz.columns:
+                    st.bar_chart(df_viz['TEMPAT'].value_counts())
+                else:
+                    st.info("Kolom 'TEMPAT' tidak tersedia.")
+                    
+            with c_g4:
+                st.subheader("📅 Tren Tanggal")
+                if 'TANGGAL_PELATIHAN' in df_viz.columns:
+                    st.line_chart(df_viz['TANGGAL_PELATIHAN'].value_counts())
+                else:
+                    st.info("Kolom 'TANGGAL' tidak tersedia.")
+
         with tab3:
             st.subheader("🔗 Status Koneksi Database")
             sheet = connect_to_gsheet()
             if sheet:
                 st.success(f"✅ Terhubung ke Google Sheet: {NAMA_GOOGLE_SHEET}")
-                st.info("Setiap kali tombol Generate diklik, data akan otomatis masuk ke sana.")
-                
-                # Menampilkan Preview Data dari Google Sheet (Opsional - read only)
-                if st.button("🔄 Muat Data dari Google Sheets"):
+                if st.button("🔄 Lihat Data Database"):
                     data_gs = sheet.get_all_records()
-                    df_gs = pd.DataFrame(data_gs)
-                    st.dataframe(df_gs)
+                    st.dataframe(pd.DataFrame(data_gs))
             else:
                 st.error("❌ Belum terhubung ke Google Sheets.")
-                st.markdown("""
-                **Langkah Perbaikan:**
-                1. Pastikan JSON sudah di paste di Streamlit Secrets.
-                2. Pastikan email Service Account sudah dijadikan Editor di Sheet.
-                3. Pastikan API Google Sheets & Drive sudah Enable di GCP.
-                """)
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Terjadi Kesalahan: {e}")
+        st.warning("Cek format file Excel Anda.")
+else:
+    st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
