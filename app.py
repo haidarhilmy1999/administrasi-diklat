@@ -109,7 +109,7 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     isi_sel(0, 0, "LAMPIRAN II", 11); header_table.cell(0, 2).merge(header_table.cell(0, 0)); header_table.cell(0,0).text="LAMPIRAN II"
     isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); header_table.cell(1, 2).merge(header_table.cell(1, 0)); header_table.cell(1,0).text=f"Nota Dinas {jabatan_ttd}"
     
-    no_nd = row.get('NOMOR_ND', '...................'); tgl_nd = row.get('TANGGAL_ND', '...................')
+    no_nd = row.get('NOMOR_ND', '[@NomorND]'); tgl_nd = row.get('TANGGAL_ND', '[@TanggalND]')
     isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd))
     isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd))
 
@@ -388,3 +388,4 @@ if uploaded_file:
         st.warning("Cek format file Excel Anda.")
 else:
     st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
+
