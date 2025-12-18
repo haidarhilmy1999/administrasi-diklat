@@ -14,7 +14,7 @@ import zipfile
 # =============================================================================
 # 1. KONFIGURASI HALAMAN
 # =============================================================================
-st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="📝")
+st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="📊")
 
 # --- CSS CUSTOM ---
 hide_st_style = """
@@ -114,13 +114,11 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
 def generate_zip_files(df, nama_ttd, jabatan_ttd):
     zip_buffer = io.BytesIO()
     
-    # PERBAIKAN: Menggunakan 'False' (huruf besar) atau menghapus argumen terakhir
     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
         for idx, row in df.iterrows():
             judul = row.get('JUDUL_PELATIHAN', 'Diklat')
             tgl = row.get('TANGGAL_PELATIHAN', '-')
             tempat = row.get('TEMPAT', '-')
-            # Membersihkan nama file dari karakter aneh
             clean_nama = str(row['NAMA']).replace('/', '_').replace('\\', '_')
             nama_file = f"{clean_nama}_{str(row['NIP'])}.docx"
             
@@ -146,7 +144,6 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd):
             header_table = doc.add_table(rows=4, cols=3); header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
             header_table.columns[0].width = Cm(1.5); header_table.columns[2].width = Cm(4.5)
             
-            # Simple Header Construction
             p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
             r = p.add_run(f"LAMPIRAN II\nNota Dinas {jabatan_ttd}")
             r.font.size = Pt(9); r.font.name = JENIS_FONT
@@ -221,8 +218,16 @@ with st.sidebar:
 # MAIN AREA
 if uploaded_file:
     try:
+        # BACA DATA
         df_raw = pd.read_excel(uploaded_file, dtype=str)
-        df_raw = df_raw.rename(columns={'NAMA PEGAWAI': 'NAMA', 'PANGKAT - GOL': 'PANGKAT', 'SATUAN KERJA': 'SATKER'})
+        # RENAMING AGAR KONSISTEN
+        df_raw = df_raw.rename(columns={
+            'NAMA PEGAWAI': 'NAMA', 
+            'PANGKAT - GOL': 'PANGKAT', 
+            'PANGKAT GOL': 'PANGKAT', # Jaga-jaga variasi nama kolom
+            'SATUAN KERJA': 'SATKER'
+        })
+        # Standarisasi kolom jadi huruf besar & tanpa spasi
         df_raw.columns = [c.strip().upper().replace(" ", "_") for c in df_raw.columns]
         df_raw = df_raw.fillna("-")
         
@@ -236,7 +241,6 @@ if uploaded_file:
             
             st.markdown("### ⚡ Pilihan Output")
             col1, col2 = st.columns(2)
-            
             ts = datetime.datetime.now().strftime("%H%M%S")
             
             with col1:
@@ -257,11 +261,57 @@ if uploaded_file:
 
         with tab2:
             df_viz = df_edited
+            
+            # 1. METRIK UTAMA
             c1, c2, c3 = st.columns(3)
-            c1.metric("Total", len(df_viz)); c2.metric("Satker", df_viz['SATKER'].nunique()); c3.metric("Diklat", df_viz['JUDUL_PELATIHAN'].nunique())
-            st.bar_chart(df_viz['SATKER'].value_counts())
+            c1.metric("Total Peserta", len(df_viz))
+            c2.metric("Total Satker", df_viz['SATKER'].nunique())
+            c3.metric("Total Diklat", df_viz['JUDUL_PELATIHAN'].nunique())
+            
+            st.markdown("---")
+            
+            # 2. GRAFIK BARIS 1 (Satker & Pangkat)
+            c_g1, c_g2 = st.columns(2)
+            
+            with c_g1:
+                st.subheader("🏢 Top 10 Satuan Kerja")
+                try:
+                    top_satker = df_viz['SATKER'].value_counts().head(10).sort_values()
+                    fig, ax = plt.subplots(figsize=(5,4))
+                    top_satker.plot(kind='barh', ax=ax, color='#3498db')
+                    ax.set_ylabel("")
+                    st.pyplot(fig)
+                    plt.close(fig) # Hemat memori
+                except Exception as e: st.warning(f"Gagal memuat grafik Satker: {e}")
+            
+            with c_g2:
+                st.subheader("👮 Komposisi Pangkat")
+                try:
+                    # Cek kolom Pangkat
+                    if 'PANGKAT' in df_viz.columns:
+                        pangkat_col = 'PANGKAT'
+                    elif 'PANGKAT_GOL' in df_viz.columns: # Fallback
+                        pangkat_col = 'PANGKAT_GOL'
+                    else:
+                        pangkat_col = None
+                    
+                    if pangkat_col:
+                        pangkat_counts = df_viz[pangkat_col].value_counts()
+                        if not pangkat_counts.empty:
+                            fig2, ax2 = plt.subplots(figsize=(5,4))
+                            ax2.pie(pangkat_counts, labels=pangkat_counts.index, autopct='%1.1f%%', startangle=90)
+                            st.pyplot(fig2)
+                            plt.close(fig2)
+                        else: st.warning("Data Pangkat kosong.")
+                    else: st.warning("Kolom 'Pangkat' tidak ditemukan.")
+                except Exception as e: st.warning(f"Gagal memuat Pie Chart: {e}")
 
-    except Exception as e:
-        st.error(f"Error: {e}")
-else:
-    st.info("👈 Silakan upload file Excel.")
+            st.markdown("---")
+
+            # 3. GRAFIK BARIS 2 (Lokasi & Tanggal - BARU)
+            c_g3, c_g4 = st.columns(2)
+
+            with c_g3:
+                st.subheader("📍 Lokasi Pelaksanaan")
+                try:
+                    if 'TEMPAT' in
