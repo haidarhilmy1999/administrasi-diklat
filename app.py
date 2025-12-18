@@ -9,7 +9,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 import io
 import datetime
-import zipfile  # <--- LIBRARY BARU UNTUK ZIP
+import zipfile
 
 # =============================================================================
 # 1. KONFIGURASI HALAMAN
@@ -55,7 +55,7 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
         return cell
     c = isi_sel(0, 0, "LAMPIRAN II", 11); c.merge(header_table.cell(0, 2))
     c = isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); c.merge(header_table.cell(1, 2))
-    # Menggunakan get() agar tidak error jika kolom tidak ada
+    
     no_nd = row.get('NOMOR_ND', '-') if 'NOMOR_ND' in row else '...................'
     tgl_nd = row.get('TANGGAL_ND', '-') if 'TANGGAL_ND' in row else '...................'
     
@@ -114,53 +114,24 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
 def generate_zip_files(df, nama_ttd, jabatan_ttd):
     zip_buffer = io.BytesIO()
     
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, false) as zip_file:
+    # PERBAIKAN: Menggunakan 'False' (huruf besar) atau menghapus argumen terakhir
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
         for idx, row in df.iterrows():
-            # Ambil data per baris
             judul = row.get('JUDUL_PELATIHAN', 'Diklat')
             tgl = row.get('TANGGAL_PELATIHAN', '-')
             tempat = row.get('TEMPAT', '-')
-            nama_file = f"{str(row['NAMA']).replace(' ', '_')}_{str(row['NIP'])}.docx"
+            # Membersihkan nama file dari karakter aneh
+            clean_nama = str(row['NAMA']).replace('/', '_').replace('\\', '_')
+            nama_file = f"{clean_nama}_{str(row['NIP'])}.docx"
             
-            # Buat dokumen individu
             doc_buffer = create_single_document(row, judul, tgl, tempat, nama_ttd, jabatan_ttd)
-            
-            # Masukkan ke dalam ZIP
             zip_file.writestr(nama_file, doc_buffer.getvalue())
             
     zip_buffer.seek(0)
     return zip_buffer
 
 def generate_word_combined(df, nama_ttd, jabatan_ttd):
-    # (Ini logika lama yang menggabungkan semua jadi 1 file - Tetap kita pertahankan)
-    # Saya ringkas agar kode tidak terlalu panjang, tapi fungsinya tetap sama
     output = io.BytesIO()
-    doc = Document()
-    # ... (Logika generate combined sama seperti v1.1) ...
-    # Agar simple, di versi ini saya gunakan loop sederhana memanggil create_single_document lalu page break
-    # Tapi demi performa di web, kita pakai cara cepat:
-    
-    # KITA PAKAI LOGIKA "SINGLE DOCUMENT" TAPI DIGABUNG PAGE BREAK
-    # Ini trik agar kita tidak menulis ulang kode 2x
-    
-    merged_doc = Document()
-    section = merged_doc.sections[0]
-    section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54)
-    section.left_margin = Cm(2.54); section.right_margin = Cm(2.54)
-    
-    # Loop generate per orang tapi digabung
-    for idx, row in df.iterrows():
-        # Buat temp doc
-        temp_buffer = create_single_document(row, row.get('JUDUL_PELATIHAN',''), row.get('TANGGAL_PELATIHAN',''), row.get('TEMPAT',''), nama_ttd, jabatan_ttd)
-        temp_doc = Document(temp_buffer)
-        
-        # Copy isi temp_doc ke merged_doc (Sederhana: Copy Paragraphs & Tables)
-        # Note: Copying full formatting complex via python-docx is hard.
-        # Strategi: Kita biarkan fitur "Combined" menggunakan logika lama (manual build)
-        # SAYA KEMBALIKAN LOGIKA LAMA DI SINI AGAR FORMAT AMAN:
-        pass 
-    
-    # --- LOGIKA LAMA (FULL BUILD) ---
     JENIS_FONT = 'Arial'; UKURAN_FONT = 11
     doc = Document()
     style = doc.styles['Normal']; style.font.name = JENIS_FONT; style.font.size = Pt(UKURAN_FONT)
@@ -170,35 +141,31 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd):
     kelompok = df.groupby('JUDUL_PELATIHAN')
     counter = 0; total = len(kelompok)
     for judul, group in kelompok:
-        # Loop per peserta dalam grup agar tiap peserta 1 halaman
         for i_peserta, row_peserta in group.iterrows():
             counter += 1
-            # Header
             header_table = doc.add_table(rows=4, cols=3); header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
             header_table.columns[0].width = Cm(1.5); header_table.columns[2].width = Cm(4.5)
-            def isi(r, c, t, b=False):
-                run = header_table.cell(r, c).paragraphs[0].add_run(t)
-                run.font.name = JENIS_FONT; run.font.size = Pt(11 if r==0 else 9); run.bold = b
-            isi(0, 0, "LAMPIRAN II"); header_table.cell(0, 2).merge(header_table.cell(0, 0)) # Merge trik
-            header_table.cell(0,0).text = "LAMPIRAN II" # Reset text manual merging is tricky in simple code
             
-            # Simple Header (Tanpa Merge Table Kompleks agar cepat)
-            p = doc.add_paragraph(f"LAMPIRAN II\nNota Dinas {jabatan_ttd}"); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            p.runs[0].font.size = Pt(9); p.runs[0].font.name = JENIS_FONT
+            # Simple Header Construction
+            p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            r = p.add_run(f"LAMPIRAN II\nNota Dinas {jabatan_ttd}")
+            r.font.size = Pt(9); r.font.name = JENIS_FONT
             
             doc.add_paragraph("")
             p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p.runs[0].bold=True; p.runs[0].font.size=Pt(12); p.runs[0].font.name=JENIS_FONT
             
-            doc.add_paragraph(f"Nama Pelatihan : {judul}")
-            doc.add_paragraph(f"Tanggal        : {row_peserta['TANGGAL_PELATIHAN']}")
-            doc.add_paragraph(f"Tempat         : {row_peserta['TEMPAT']}")
-            doc.add_paragraph("")
+            p_info = doc.add_paragraph()
+            p_info.add_run(f"Nama Pelatihan : {judul}\n").font.name = JENIS_FONT
+            p_info.add_run(f"Tanggal        : {row_peserta['TANGGAL_PELATIHAN']}\n").font.name = JENIS_FONT
+            p_info.add_run(f"Tempat         : {row_peserta['TEMPAT']}").font.name = JENIS_FONT
             
+            doc.add_paragraph("")
             tbl = doc.add_table(rows=2, cols=5); tbl.style='Table Grid'
             hdrs = ['NO', 'NAMA', 'NIP', 'PANGKAT', 'SATKER']
             for i, h in enumerate(hdrs): 
                 r = tbl.rows[0].cells[i].paragraphs[0].add_run(h); r.bold=True; r.font.size=Pt(10); r.font.name=JENIS_FONT
+                tbl.rows[0].cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             
             vals = [row_peserta['NO'], row_peserta['NAMA'], row_peserta['NIP'], row_peserta['PANGKAT'], row_peserta['SATKER']]
             for i, v in enumerate(vals):
@@ -206,6 +173,7 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd):
 
             doc.add_paragraph("")
             p = doc.add_paragraph(f"\n\nDitandatangani secara elektronik\n{nama_ttd}"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.runs[0].font.name = JENIS_FONT
             
             if counter < len(df): doc.add_page_break()
 
@@ -276,7 +244,6 @@ if uploaded_file:
                 st.caption("Semua peserta dalam 1 file Word panjang.")
                 if st.button("Generate Single Word"):
                     with st.spinner("Membuat dokumen..."):
-                        # Logic generate gabungan (Simplified for robustness in this snippet)
                         docx_file = generate_word_combined(df_edited, nama_ttd, jabatan_ttd)
                         st.download_button("📥 Download .docx", docx_file, f"Lampiran_Gabungan_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
