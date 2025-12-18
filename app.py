@@ -16,11 +16,10 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 # =============================================================================
-# 1. KONFIGURASI HALAMAN
+# 1. KONFIGURASI & DATABASE
 # =============================================================================
-st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="📈")
+st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="⚡")
 
-# --- CSS CUSTOM ---
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -31,17 +30,12 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
-# Nama Google Sheet
 NAMA_GOOGLE_SHEET = "Database_Diklat_DJBC"
 
-# --- INISIALISASI RIWAYAT LOKAL ---
 if 'history_log' not in st.session_state:
     st.session_state['history_log'] = pd.DataFrame(columns=['TIMESTAMP', 'NAMA', 'NIP', 'DIKLAT', 'SATKER'])
 
-# =============================================================================
-# 2. FUNGSI GOOGLE SHEETS
-# =============================================================================
-
+# --- FUNGSI DATABASE (CALLBACK) ---
 def connect_to_gsheet():
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -50,10 +44,10 @@ def connect_to_gsheet():
         client = gspread.authorize(creds)
         sheet = client.open(NAMA_GOOGLE_SHEET).sheet1
         return sheet
-    except Exception as e:
-        return None
+    except: return None
 
-def save_to_cloud_database(df_input):
+def save_to_cloud_callback(df_input):
+    """Fungsi ini dipanggil otomatis SAAT tombol download diklik"""
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         data_to_save = df_input.copy()
@@ -74,15 +68,14 @@ def save_to_cloud_database(df_input):
             if sheet:
                 data_list = data_to_save.astype(str).values.tolist()
                 sheet.append_rows(data_list)
-                return "Sukses Cloud"
+                st.toast("✅ Data riwayat berhasil disimpan ke Cloud!", icon="☁️")
             else:
-                return "Gagal Koneksi Cloud"
-        return "Kolom Data Tidak Lengkap"
+                st.toast("⚠️ Gagal koneksi Cloud, tapi file tetap terdownload.", icon="📂")
     except Exception as e:
-        return f"Error: {e}"
+        st.toast(f"Error Database: {e}", icon="❌")
 
 # =============================================================================
-# 3. FUNGSI GENERATOR WORD
+# 2. FUNGSI GENERATOR DOKUMEN
 # =============================================================================
 
 def set_repeat_table_header(row):
@@ -90,7 +83,7 @@ def set_repeat_table_header(row):
     tblHeader = OxmlElement('w:tblHeader'); tblHeader.set(qn('w:val'), "true")
     trPr.append(tblHeader)
 
-# --- FUNGSI 1: GENERATE PER PESERTA (ZIP) ---
+# FUNGSI UNTUK ZIP (PER PESERTA)
 def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     JENIS_FONT = 'Arial'; UKURAN_FONT = 11
     doc = Document()
@@ -98,7 +91,6 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     section = doc.sections[0]; section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54)
     section.left_margin = Cm(2.54); section.right_margin = Cm(2.54)
 
-    # Header Kanan
     header_table = doc.add_table(rows=4, cols=3); header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
     header_table.columns[0].width = Cm(1.5); header_table.columns[2].width = Cm(4.5)
     def isi_sel(r, c, text, size=9, bold=False):
@@ -106,8 +98,6 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
         run = p.add_run(text); run.font.name = JENIS_FONT; run.font.size = Pt(size); run.bold = bold
     isi_sel(0, 0, "LAMPIRAN II", 11); header_table.cell(0, 2).merge(header_table.cell(0, 0)); header_table.cell(0,0).text="LAMPIRAN II"
     isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); header_table.cell(1, 2).merge(header_table.cell(1, 0)); header_table.cell(1,0).text=f"Nota Dinas {jabatan_ttd}"
-    
-    # --- UPDATE: Menggunakan Input Sidebar ---
     isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val))
     isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val))
 
@@ -136,7 +126,7 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     f_out = io.BytesIO(); doc.save(f_out); f_out.seek(0)
     return f_out
 
-# --- FUNGSI 2: GENERATE GABUNGAN (FULL TABLE) ---
+# FUNGSI FULL TABLE (GABUNGAN)
 def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     JENIS_FONT = 'Arial'; UKURAN_FONT = 11
     output = io.BytesIO()
@@ -157,31 +147,24 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     kelompok_data = df.groupby(col_judul)
     
     counter_group = 0; total_group = len(kelompok_data)
-    
     for judul, data_grup in kelompok_data:
         counter_group += 1
         first_row = data_grup.iloc[0]
         tgl_pel = first_row.get('TANGGAL_PELATIHAN', '-')
         tempat_pel = first_row.get('TEMPAT', '-')
 
-        # Header Kanan
         header_table = doc.add_table(rows=4, cols=3); header_table.autofit = False; header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
         header_table.columns[0].width = Cm(1.5); header_table.columns[1].width = Cm(0.3); header_table.columns[2].width = Cm(4.5)
-        
         def isi_sel(r, c, text, size=9, bold=False):
             cell = header_table.cell(r, c); p = cell.paragraphs[0]; p.paragraph_format.space_after = Pt(0)
             run = p.add_run(text); run.font.name = JENIS_FONT; run.font.size = Pt(size); run.bold = bold
             return cell
-            
         c = isi_sel(0, 0, "LAMPIRAN II", 11); c.merge(header_table.cell(0, 2))
         c = isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); c.merge(header_table.cell(1, 2))
-        
-        # --- UPDATE: Menggunakan Input Sidebar ---
         isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val))
         isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val))
 
-        doc.add_paragraph("")
-        p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph(""); p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.runs[0]; run.bold = True; run.font.name = JENIS_FONT; run.font.size = Pt(12) 
         
         info_table = doc.add_table(rows=3, cols=3); info_table.autofit = False
@@ -194,7 +177,6 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
         table = doc.add_table(rows=1, cols=5); table.style = 'Table Grid'; table.autofit = False
         headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']
         widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
-        
         hdr_cells = table.rows[0].cells
         set_repeat_table_header(table.rows[0])
         for i in range(5):
@@ -221,7 +203,6 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
         run = p.add_run("Ditandatangani secara elektronik"); run.font.name = JENIS_FONT; run.font.size = Pt(9); run.font.color.rgb = RGBColor(150, 150, 150)
         p.add_run("\n")
         run = p.add_run(nama_ttd); run.font.name = JENIS_FONT; run.font.size = Pt(11); run.bold = False 
-
         if counter_group < total_group: doc.add_page_break()
 
     doc.save(output); output.seek(0)
@@ -233,150 +214,129 @@ def generate_zip_files(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
         for idx, row in df.iterrows():
             judul = row.get('JUDUL_PELATIHAN', 'Diklat')
             nama_file = f"{str(row.get('NAMA','Peserta')).replace(' ', '_')}_{str(row.get('NIP','000'))}.docx"
-            # Pass ND Values here
             doc_buffer = create_single_document(row, judul, row.get('TANGGAL_PELATIHAN','-'), row.get('TEMPAT','-'), nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val)
             zip_file.writestr(nama_file, doc_buffer.getvalue())
     zip_buffer.seek(0)
     return zip_buffer
 
 # =============================================================================
-# 4. GUI UTAMA
+# 3. GUI SIDEBAR (INPUT & TEMPLATE)
+# =============================================================================
+with st.sidebar:
+    st.header("📂 Upload Data")
+    uploaded_file = st.file_uploader("Upload Excel", type=['xlsx'], label_visibility="collapsed")
+    
+    # --- POSISI BARU TOMBOL TEMPLATE (DI BAWAH UPLOAD) ---
+    df_dummy = pd.DataFrame({
+        "JUDUL_PELATIHAN": ["Diklat Teknis A", "Diklat Teknis A"],
+        "TANGGAL_PELATIHAN": ["10-12 Jan 2025", "10-12 Jan 2025"],
+        "TEMPAT": ["Pusdiklat BC", "Pusdiklat BC"],
+        "NO": [1, 2],
+        "NAMA PEGAWAI": ["Fajar Ali", "Dede Kurnia"],
+        "NIP": ["19990101...", "19950505..."],
+        "PANGKAT - GOL": ["Pengatur (II/c)", "Penata Muda (III/a)"],
+        "SATUAN KERJA": ["KPU Batam", "KPPBC Jakarta"]
+    })
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        df_dummy.to_excel(writer, index=False)
+    buffer.seek(0)
+    st.download_button("📥 Download Template Excel", buffer, "Template_Peserta.xlsx", use_container_width=True)
+    
+    st.markdown("---")
+    st.markdown("### ✍️ Detail Nota Dinas")
+    nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
+    jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
+    nomor_nd = st.text_input("Nomor ND", "ND-...../...../2025")
+    tanggal_nd = st.text_input("Tanggal ND", "..... ................. 2025")
+
+# =============================================================================
+# 4. GUI UTAMA (MAIN AREA)
 # =============================================================================
 st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
 st.markdown("---")
 
-with st.sidebar:
-    st.header("📂 Upload Data")
-    uploaded_file = st.file_uploader("Upload Excel", type=['xlsx'])
-    
-    st.markdown("### ✍️ Penanda Tangan")
-    nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
-    jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
-    
-    # --- UPDATE: FIELD INPUT NOMOR ND ---
-    st.markdown("### 📝 Nomor Nota Dinas")
-    nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
-    tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
-
-    st.markdown("---")
-    if st.button("📥 Template"):
-        df_dummy = pd.DataFrame({
-            "JUDUL_PELATIHAN": ["Diklat Teknis A", "Diklat Teknis A"],
-            "TANGGAL_PELATIHAN": ["10-12 Jan 2025", "10-12 Jan 2025"],
-            "TEMPAT": ["Pusdiklat BC", "Pusdiklat BC"],
-            "NO": [1, 2],
-            "NAMA PEGAWAI": ["Fajar Ali", "Dede Kurnia"],
-            "NIP": ["19990101...", "19950505..."],
-            "PANGKAT - GOL": ["Pengatur (II/c)", "Penata Muda (III/a)"],
-            "SATUAN KERJA": ["KPU Batam", "KPPBC Jakarta"]
-        })
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_dummy.to_excel(writer, index=False)
-        buffer.seek(0)
-        st.download_button("Klik untuk Download", buffer, "Template_Peserta.xlsx")
-
 if uploaded_file:
     try:
         df_raw = pd.read_excel(uploaded_file, dtype=str)
-        
-        # Normalisasi Kolom
+        # Normalisasi
         clean_cols = {}
         for col in df_raw.columns:
             upper_col = col.strip().upper().replace(" ", "_").replace("-", "_")
             if "NAMA" in upper_col: clean_cols[col] = "NAMA"
             elif "NIP" in upper_col: clean_cols[col] = "NIP"
             elif "PANGKAT" in upper_col or "GOL" in upper_col: clean_cols[col] = "PANGKAT"
-            elif "KERJA" in upper_col or "SATKER" in upper_col or "UNIT" in upper_col: clean_cols[col] = "SATKER"
+            elif "KERJA" in upper_col or "SATKER" in upper_col: clean_cols[col] = "SATKER"
             elif "TEMPAT" in upper_col: clean_cols[col] = "TEMPAT"
             elif "JUDUL" in upper_col or "DIKLAT" in upper_col: clean_cols[col] = "JUDUL_PELATIHAN"
             elif "TANGGAL" in upper_col and "PELATIHAN" in upper_col: clean_cols[col] = "TANGGAL_PELATIHAN"
             else: clean_cols[col] = upper_col 
-            
-        df_raw = df_raw.rename(columns=clean_cols)
-        df_raw = df_raw.fillna("-")
+        df_raw = df_raw.rename(columns=clean_cols).fillna("-")
         
         tab1, tab2, tab3 = st.tabs(["📝 Generator", "📊 Dashboard", "☁️ Database"])
         
         with tab1:
+            st.info("💡 Data di bawah ini bisa diedit. Jika sudah OK, tombol download siap ditekan.")
             df_edited = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
-            col1, col2 = st.columns(2)
             ts = datetime.datetime.now().strftime("%H%M%S")
             
+            # --- PRAKTIS: PRE-CALCULATE FILE DULU ---
+            # File dibuat di memori setiap kali ada perubahan data, agar tombol download selalu ready
+            word_buffer = generate_word_combined(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
+            zip_buffer = generate_zip_files(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
+
+            col1, col2 = st.columns(2)
             with col1:
-                st.markdown("#### 📄 Satu File Gabungan")
-                st.caption("Semua peserta dalam 1 tabel Word rapi.")
-                if st.button("Generate Single Word"):
-                    with st.spinner("Proses Cloud..."):
-                        status = save_to_cloud_database(df_edited)
-                        # Pass Nomor & Tanggal ND dari Sidebar
-                        docx_file = generate_word_combined(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
-                        st.download_button("📥 Download", docx_file, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-                        if "Sukses" in status: st.success("Data tersimpan di Cloud!")
+                st.markdown("#### 📄 File Gabungan")
+                # ONE CLICK DOWNLOAD (Callback save database dipasang disini)
+                st.download_button(
+                    label="⚡ Download Lampiran ND (.docx)",
+                    data=word_buffer,
+                    file_name=f"Lampiran_ND_{ts}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    type="primary",
+                    use_container_width=True,
+                    on_click=save_to_cloud_callback,
+                    args=(df_edited,)
+                )
 
             with col2:
-                st.markdown("#### 📦 File Terpisah (.ZIP)")
-                st.caption("Split file per peserta.")
-                if st.button("Generate Bulk ZIP", type="primary"):
-                    with st.spinner("Proses Cloud..."):
-                        status = save_to_cloud_database(df_edited)
-                        # Pass Nomor & Tanggal ND dari Sidebar
-                        zip_file = generate_zip_files(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
-                        st.download_button("📥 Download ZIP", zip_file, f"Arsip_{ts}.zip", "application/zip")
-                        if "Sukses" in status: st.success("Data tersimpan di Cloud!")
+                st.markdown("#### 📦 File Terpisah")
+                st.download_button(
+                    label="⚡ Download Arsip ZIP",
+                    data=zip_buffer,
+                    file_name=f"Arsip_Peserta_{ts}.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                    on_click=save_to_cloud_callback,
+                    args=(df_edited,)
+                )
 
         with tab2:
             df_viz = df_edited
-            with st.expander("ℹ️ Cek Kolom Terbaca (Klik disini jika grafik kosong)"):
-                st.write("Kolom yang dikenali sistem:", list(df_viz.columns))
-            
-            col_satker = 'SATKER' if 'SATKER' in df_viz.columns else None
-            col_diklat = 'JUDUL_PELATIHAN' if 'JUDUL_PELATIHAN' in df_viz.columns else None
-            
+            with st.expander("ℹ️ Cek Kolom (Debug)"): st.write(list(df_viz.columns))
             c1, c2, c3 = st.columns(3)
-            c1.metric("Total Peserta", len(df_viz))
-            if col_satker: c2.metric("Total Satker", df_viz[col_satker].nunique())
-            if col_diklat: c3.metric("Total Diklat", df_viz[col_diklat].nunique())
-            
+            c1.metric("Total", len(df_viz))
+            if 'SATKER' in df_viz.columns: c2.metric("Satker", df_viz['SATKER'].nunique())
+            if 'JUDUL_PELATIHAN' in df_viz.columns: c3.metric("Diklat", df_viz['JUDUL_PELATIHAN'].nunique())
             st.markdown("---")
-            c_g1, c_g2 = st.columns(2)
-            with c_g1:
-                st.subheader("🏢 Sebaran Satker")
-                if col_satker:
-                    satker_counts = df_viz[col_satker].value_counts().head(10)
-                    st.bar_chart(satker_counts)
-                else: st.warning("⚠️ Kolom 'SATKER' tidak ditemukan.")
-            with c_g2:
-                st.subheader("👮 Komposisi Pangkat")
+            cg1, cg2 = st.columns(2)
+            with cg1: 
+                if 'SATKER' in df_viz.columns: st.bar_chart(df_viz['SATKER'].value_counts().head(10))
+            with cg2:
                 if 'PANGKAT' in df_viz.columns:
-                    pangkat_counts = df_viz['PANGKAT'].value_counts()
-                    fig2, ax2 = plt.subplots(figsize=(5,4))
-                    ax2.pie(pangkat_counts, labels=pangkat_counts.index, autopct='%1.1f%%', startangle=90)
-                    st.pyplot(fig2); plt.close(fig2)
-                else: st.warning("⚠️ Kolom 'PANGKAT' tidak ditemukan.")
-            st.markdown("---")
-            c_g3, c_g4 = st.columns(2)
-            with c_g3:
-                st.subheader("📍 Lokasi"); 
-                if 'TEMPAT' in df_viz.columns: st.bar_chart(df_viz['TEMPAT'].value_counts())
-            with c_g4:
-                st.subheader("📅 Tren Tanggal"); 
-                if 'TANGGAL_PELATIHAN' in df_viz.columns: st.line_chart(df_viz['TANGGAL_PELATIHAN'].value_counts())
+                    pc = df_viz['PANGKAT'].value_counts()
+                    fig, ax = plt.subplots(figsize=(5,4)); ax.pie(pc, labels=pc.index, autopct='%1.1f%%'); st.pyplot(fig); plt.close(fig)
 
         with tab3:
-            st.subheader("🔗 Status Koneksi Database")
+            st.subheader("🔗 Status Database")
             sheet = connect_to_gsheet()
             if sheet:
-                st.success(f"✅ Terhubung ke Google Sheet: {NAMA_GOOGLE_SHEET}")
-                if st.button("🔄 Lihat Data Database"):
-                    data_gs = sheet.get_all_records()
-                    st.dataframe(pd.DataFrame(data_gs))
-            else:
-                st.error("❌ Belum terhubung ke Google Sheets.")
+                st.success(f"✅ Terhubung ke: {NAMA_GOOGLE_SHEET}")
+                if st.button("🔄 Refresh Data"): st.dataframe(pd.DataFrame(sheet.get_all_records()))
+            else: st.error("❌ Belum terhubung.")
 
     except Exception as e:
-        st.error(f"Terjadi Kesalahan: {e}")
-        st.warning("Cek format file Excel Anda.")
+        st.error(f"Error: {e}")
 else:
     st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
-
