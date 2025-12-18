@@ -14,7 +14,7 @@ import zipfile
 # =============================================================================
 # 1. KONFIGURASI HALAMAN
 # =============================================================================
-st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="📜")
 
 # --- CSS CUSTOM ---
 hide_st_style = """
@@ -27,6 +27,11 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
+# --- INISIALISASI RIWAYAT (SESSION STATE) ---
+if 'history_log' not in st.session_state:
+    # Membuat DataFrame kosong untuk menampung riwayat
+    st.session_state['history_log'] = pd.DataFrame(columns=['TIMESTAMP', 'NAMA', 'NIP', 'DIKLAT', 'TANGGAL_DIKLAT'])
+
 # =============================================================================
 # 2. FUNGSI LOGIKA (BACKEND)
 # =============================================================================
@@ -36,7 +41,35 @@ def set_repeat_table_header(row):
     tblHeader = OxmlElement('w:tblHeader'); tblHeader.set(qn('w:val'), "true")
     trPr.append(tblHeader)
 
-# Fungsi membuat 1 Dokumen Word (Modular)
+# Fungsi Simpan ke Riwayat
+def save_to_history(df_input):
+    """Menyimpan data yang baru digenerate ke session state"""
+    try:
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Ambil kolom penting saja
+        new_data = df_input.copy()
+        
+        # Mapping nama kolom agar aman
+        col_map = {
+            'NAMA': 'NAMA', 
+            'NIP': 'NIP', 
+            'JUDUL_PELATIHAN': 'DIKLAT', 
+            'TANGGAL_PELATIHAN': 'TANGGAL_DIKLAT'
+        }
+        
+        # Pastikan kolom ada sebelum rename
+        valid_cols = {k: v for k, v in col_map.items() if k in new_data.columns}
+        new_data = new_data[list(valid_cols.keys())].rename(columns=valid_cols)
+        
+        new_data['TIMESTAMP'] = current_time
+        
+        # Gabungkan dengan riwayat lama
+        st.session_state['history_log'] = pd.concat([st.session_state['history_log'], new_data], ignore_index=True)
+    except Exception as e:
+        st.warning(f"Gagal menyimpan riwayat: {e}")
+
+# Fungsi generate dokumen (Sama seperti sebelumnya)
 def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_ttd):
     JENIS_FONT = 'Arial'; UKURAN_FONT = 11
     doc = Document()
@@ -105,7 +138,6 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     run = p.add_run("Ditandatangani secara elektronik"); run.font.name = JENIS_FONT; run.font.size = Pt(9); run.font.color.rgb = RGBColor(150, 150, 150); p.add_run("\n")
     run = p.add_run(nama_ttd); run.font.name = JENIS_FONT; run.font.size = Pt(11); run.bold = False 
 
-    # Save to buffer
     f_out = io.BytesIO()
     doc.save(f_out)
     f_out.seek(0)
@@ -113,7 +145,6 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
 
 def generate_zip_files(df, nama_ttd, jabatan_ttd):
     zip_buffer = io.BytesIO()
-    
     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
         for idx, row in df.iterrows():
             judul = row.get('JUDUL_PELATIHAN', 'Diklat')
@@ -124,7 +155,6 @@ def generate_zip_files(df, nama_ttd, jabatan_ttd):
             
             doc_buffer = create_single_document(row, judul, tgl, tempat, nama_ttd, jabatan_ttd)
             zip_file.writestr(nama_file, doc_buffer.getvalue())
-            
     zip_buffer.seek(0)
     return zip_buffer
 
@@ -227,16 +257,15 @@ if uploaded_file:
             'PANGKAT GOL': 'PANGKAT',
             'SATUAN KERJA': 'SATKER'
         })
-        # Standarisasi kolom jadi huruf besar & tanpa spasi
+        # Standarisasi kolom
         df_raw.columns = [c.strip().upper().replace(" ", "_") for c in df_raw.columns]
         df_raw = df_raw.fillna("-")
         
-        tab1, tab2 = st.tabs(["📝 Generator Dokumen", "📊 Dashboard"])
+        # TAB MENU
+        tab1, tab2, tab3 = st.tabs(["📝 Generator", "📊 Dashboard", "📜 Riwayat (Log)"])
         
         with tab1:
-            st.success(f"Terbaca: **{len(df_raw)} Data**.")
-            st.info("💡 Edit data di bawah jika ada typo, lalu pilih jenis download.")
-            
+            st.info("💡 Edit data di bawah ini jika perlu, lalu klik Generate.")
             df_edited = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
             
             st.markdown("### ⚡ Pilihan Output")
@@ -245,89 +274,77 @@ if uploaded_file:
             
             with col1:
                 st.markdown("#### 📄 Satu File Gabungan")
-                st.caption("Semua peserta dalam 1 file Word panjang.")
                 if st.button("Generate Single Word"):
-                    with st.spinner("Membuat dokumen..."):
+                    with st.spinner("Memproses..."):
+                        save_to_history(df_edited) # SIMPAN KE RIWAYAT
                         docx_file = generate_word_combined(df_edited, nama_ttd, jabatan_ttd)
                         st.download_button("📥 Download .docx", docx_file, f"Lampiran_Gabungan_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                        st.success("Berhasil! Cek tab Riwayat.")
 
             with col2:
                 st.markdown("#### 📦 File Terpisah (.ZIP)")
-                st.caption("Setiap peserta punya file Word sendiri-sendiri.")
                 if st.button("Generate Bulk ZIP", type="primary"):
-                    with st.spinner("Memisahkan file per peserta..."):
+                    with st.spinner("Memproses..."):
+                        save_to_history(df_edited) # SIMPAN KE RIWAYAT
                         zip_file = generate_zip_files(df_edited, nama_ttd, jabatan_ttd)
                         st.download_button("📥 Download .zip", zip_file, f"Arsip_Peserta_{ts}.zip", "application/zip")
+                        st.success("Berhasil! Cek tab Riwayat.")
 
         with tab2:
+            # Dashboard Code (Sama seperti v1.3)
             df_viz = df_edited
-            
-            # 1. METRIK UTAMA
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Peserta", len(df_viz))
             c2.metric("Total Satker", df_viz['SATKER'].nunique())
             c3.metric("Total Diklat", df_viz['JUDUL_PELATIHAN'].nunique())
-            
             st.markdown("---")
             
-            # 2. GRAFIK BARIS 1 (Satker & Pangkat)
             c_g1, c_g2 = st.columns(2)
-            
             with c_g1:
-                st.subheader("🏢 Top 10 Satuan Kerja")
+                st.subheader("🏢 Top 10 Satker")
                 try:
                     top_satker = df_viz['SATKER'].value_counts().head(10).sort_values()
                     fig, ax = plt.subplots(figsize=(5,4))
                     top_satker.plot(kind='barh', ax=ax, color='#3498db')
-                    ax.set_ylabel("")
-                    st.pyplot(fig)
-                    plt.close(fig) 
-                except Exception as e: st.warning(f"Gagal memuat grafik Satker: {e}")
-            
+                    st.pyplot(fig); plt.close(fig)
+                except: st.warning("Data Satker kurang.")
             with c_g2:
-                st.subheader("👮 Komposisi Pangkat")
+                st.subheader("👮 Pangkat")
                 try:
-                    # Cek kolom Pangkat
-                    pangkat_col = None
-                    if 'PANGKAT' in df_viz.columns: pangkat_col = 'PANGKAT'
-                    elif 'PANGKAT_GOL' in df_viz.columns: pangkat_col = 'PANGKAT_GOL'
-                    
-                    if pangkat_col:
-                        pangkat_counts = df_viz[pangkat_col].value_counts()
-                        if not pangkat_counts.empty:
-                            fig2, ax2 = plt.subplots(figsize=(5,4))
-                            ax2.pie(pangkat_counts, labels=pangkat_counts.index, autopct='%1.1f%%', startangle=90)
-                            st.pyplot(fig2)
-                            plt.close(fig2)
-                        else: st.warning("Data Pangkat kosong.")
-                    else: st.warning("Kolom 'Pangkat' tidak ditemukan.")
-                except Exception as e: st.warning(f"Gagal memuat Pie Chart: {e}")
+                    col_p = 'PANGKAT' if 'PANGKAT' in df_viz.columns else 'PANGKAT_GOL'
+                    if col_p in df_viz.columns:
+                        pc = df_viz[col_p].value_counts()
+                        fig2, ax2 = plt.subplots(figsize=(5,4))
+                        ax2.pie(pc, labels=pc.index, autopct='%1.1f%%', startangle=90)
+                        st.pyplot(fig2); plt.close(fig2)
+                except: st.warning("Data Pangkat kurang.")
 
-            st.markdown("---")
-
-            # 3. GRAFIK BARIS 2 (Lokasi & Tanggal)
-            c_g3, c_g4 = st.columns(2)
-
-            with c_g3:
-                st.subheader("📍 Lokasi Pelaksanaan")
-                try:
-                    if 'TEMPAT' in df_viz.columns:
-                        tempat_counts = df_viz['TEMPAT'].value_counts()
-                        st.bar_chart(tempat_counts)
-                    else: st.info("Kolom 'Tempat' tidak tersedia.")
-                except: st.warning("Gagal memuat grafik Lokasi.")
-
-            with c_g4:
-                st.subheader("📅 Tren Tanggal Pelatihan")
-                try:
-                    if 'TANGGAL_PELATIHAN' in df_viz.columns:
-                        tgl_counts = df_viz['TANGGAL_PELATIHAN'].value_counts().sort_index()
-                        st.line_chart(tgl_counts)
-                    else: st.info("Kolom 'Tanggal Pelatihan' tidak tersedia.")
-                except: st.warning("Gagal memuat grafik Tren Tanggal.")
+        # --- FITUR BARU: TAB RIWAYAT ---
+        with tab3:
+            st.subheader("📜 Log Riwayat Pembuatan Dokumen (Sesi Ini)")
+            st.caption("⚠️ Perhatian: Riwayat ini akan hilang jika Anda menutup browser. Silakan download log sebelum keluar.")
+            
+            log_df = st.session_state['history_log']
+            
+            if not log_df.empty:
+                st.dataframe(log_df, use_container_width=True)
+                
+                # Tombol Download Log Excel
+                buffer_log = io.BytesIO()
+                with pd.ExcelWriter(buffer_log, engine='xlsxwriter') as writer:
+                    log_df.to_excel(writer, index=False)
+                buffer_log.seek(0)
+                
+                st.download_button(
+                    label="💾 Simpan Riwayat ke Excel",
+                    data=buffer_log,
+                    file_name=f"Log_Riwayat_Diklat_{ts}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.info("Belum ada dokumen yang dibuat pada sesi ini.")
 
     except Exception as e:
-        st.error(f"Error Membaca File: {e}")
-        st.warning("Pastikan file Excel menggunakan format yang benar (Download Template jika ragu).")
+        st.error(f"Error: {e}")
 else:
     st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
