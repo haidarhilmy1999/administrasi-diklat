@@ -247,8 +247,8 @@ with st.sidebar:
     st.markdown("### ✍️ Detail Nota Dinas")
     nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
     jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
-    nomor_nd = st.text_input("Nomor ND", "ND-...../...../2025")
-    tanggal_nd = st.text_input("Tanggal ND", "..... ................. 2025")
+    nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
+    tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
 
 # =============================================================================
 # 4. GUI UTAMA (MAIN AREA)
@@ -340,3 +340,4 @@ if uploaded_file:
         st.error(f"Error: {e}")
 else:
     st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
+
