@@ -13,12 +13,29 @@ import datetime
 # --- 1. KONFIGURASI HALAMAN (WAJIB PALING ATAS) ---
 st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="📝")
 
-# --- 2. CSS CUSTOM (TAMPILAN PROFESIONAL) ---
+# --- CSS CUSTOM ---
+# Menyembunyikan elemen-elemen bawaan Streamlit agar terlihat bersih
 hide_st_style = """
             <style>
+            /* 1. Menghilangkan Menu Hamburger (Kanan Atas) */
             #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
+            
+            /* 2. Menghilangkan Header Atas */
             header {visibility: hidden;}
+            
+            /* 3. Menghilangkan Footer Standar */
+            footer {visibility: hidden;}
+            
+            /* 4. MENGHILANGKAN LOGO STREAMLIT (Kanan Bawah) */
+            /* Target spesifik untuk Viewer Badge */
+            .viewerBadge_container__1QSob {display: none !important;}
+            .viewerBadge_link__1S137 {display: none !important;}
+            
+            /* Target cadangan jika nama class berubah */
+            [data-testid="stStatusWidget"] {visibility: hidden !important;}
+            
+            /* Menghilangkan whitespace di bawah yang kadang muncul */
+            div.block-container {padding-bottom: 1rem;}
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
@@ -346,3 +363,4 @@ if uploaded_file:
 
 else:
     st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
+
