@@ -17,46 +17,41 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 # =============================================================================
-# 1. KONFIGURASI HALAMAN & STATE SIDEBAR
+# 1. KONFIGURASI HALAMAN (STABIL)
 # =============================================================================
-
-# Inisialisasi State Sidebar sebelum halaman dimuat
-if 'sidebar_state' not in st.session_state:
-    st.session_state.sidebar_state = 'expanded'
-
 st.set_page_config(
     page_title="Sistem Diklat DJBC Online", 
     layout="wide", 
     page_icon="⚡",
-    initial_sidebar_state=st.session_state.sidebar_state 
+    initial_sidebar_state="expanded" # Sidebar selalu terbuka di awal
 )
 
-# --- CSS AGRESIF (TAPI TETAP MENAMPILKAN KONTROL SIDEBAR) ---
+# --- CSS PEMBERSIH (TANPA MERUSAK SIDEBAR) ---
 hide_st_style = """
             <style>
-            /* 1. Sembunyikan elemen pengganggu (Fork & Deploy) */
-            .viewerBadge_container__1QSob {display: none !important;}
-            .stAppDeployButton {display: none !important;}
+            /* 1. Sembunyikan Menu Utama (Titik Tiga di Kanan Atas) */
+            #MainMenu {visibility: hidden;}
+            
+            /* 2. Sembunyikan Footer Streamlit */
+            footer {visibility: hidden;}
+            
+            /* 3. Sembunyikan Garis Warna-warni di Atas */
             [data-testid="stDecoration"] {display: none;}
             
-            /* 2. Sembunyikan Header & Toolbar */
-            header {visibility: hidden;}
-            [data-testid="stToolbar"] {visibility: hidden;}
+            /* 4. Sembunyikan Tombol Deploy (Pojok Kanan Atas) */
+            .stAppDeployButton {display: none !important;}
             
-            /* 3. PAKSA TOMBOL PANAH SIDEBAR MUNCUL (PENTING) */
-            [data-testid="stSidebarCollapsedControl"] {
-                visibility: visible !important;
-                display: block !important;
-                top: 0px !important; 
-                left: 0px !important;
-                z-index: 999999 !important;
-            }
+            /* 5. Sembunyikan Badge Fork/Viewer (Pojok Kanan Atas) */
+            /* Menggunakan selector atribut agar kena walau nama class berubah */
+            div[data-testid="stStatusWidget"] {display: none !important;}
+            div[class*="viewerBadge"] {display: none !important;}
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 NAMA_GOOGLE_SHEET = "Database_Diklat_DJBC"
 
+# Inisialisasi Session State
 if 'history_log' not in st.session_state:
     st.session_state['history_log'] = pd.DataFrame(columns=['TIMESTAMP', 'NAMA', 'NIP', 'DIKLAT', 'SATKER'])
 if 'uploader_key' not in st.session_state:
@@ -99,7 +94,7 @@ def reset_app():
     st.rerun()
 
 # =============================================================================
-# 2. FUNGSI LOGIKA
+# 2. FUNGSI LOGIKA (NIP INTELLIGENCE & WORD)
 # =============================================================================
 
 def calculate_age_from_nip(nip_str):
@@ -245,14 +240,6 @@ with st.sidebar:
     
     st.markdown("---")
     if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
-
-# TOMBOL BACKUP - Fixed Logic
-# Tombol ini selalu muncul untuk antisipasi jika tombol panah hilang
-# Menggunakan st.expander agar tidak memenuhi layar utama jika tidak dibutuhkan
-with st.expander("🛠️ Menu Darurat (Jika Sidebar Hilang)"):
-    if st.button("👁️ Buka Sidebar Paksa"):
-        st.session_state.sidebar_state = 'expanded'
-        st.rerun()
 
 st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
 st.markdown("---")
