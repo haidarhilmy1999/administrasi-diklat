@@ -222,13 +222,13 @@ with st.sidebar:
     st.markdown("### ✍️ Detail Nota Dinas")
     nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
     jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
-    nomor_nd = st.text_input("Nomor ND", "ND-...../...../2025")
-    tanggal_nd = st.text_input("Tanggal ND", "..... ................. 2025")
+    nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
+    tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
     
     st.markdown("---")
     if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
 
-st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
+st.title("Admin Diklat DJBC 🇮🇩")
 st.markdown("---")
 
 if uploaded_file:
@@ -338,3 +338,4 @@ if uploaded_file:
     except Exception as e: st.error(f"Error: {e}")
 else:
     st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
+
