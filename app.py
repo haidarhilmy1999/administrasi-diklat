@@ -17,41 +17,38 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 # =============================================================================
-# 1. KONFIGURASI HALAMAN (STABIL)
+# 1. KONFIGURASI HALAMAN (LAYOUT ATAS)
 # =============================================================================
 st.set_page_config(
     page_title="Sistem Diklat DJBC Online", 
     layout="wide", 
     page_icon="⚡",
-    initial_sidebar_state="expanded" # Sidebar selalu terbuka di awal
+    initial_sidebar_state="collapsed" # Tutup sidebar karena kita pakai menu atas
 )
 
-# --- CSS PEMBERSIH (TANPA MERUSAK SIDEBAR) ---
+# --- CSS PEMBASMI LOGO (AGRESIF & AMAN) ---
+# Karena kita tidak butuh sidebar, kita bisa menyembunyikan Header secara total.
+# Ini menjamin logo Git/Fork/Deploy HILANG 100%.
 hide_st_style = """
             <style>
-            /* 1. Sembunyikan Menu Utama (Titik Tiga di Kanan Atas) */
             #MainMenu {visibility: hidden;}
-            
-            /* 2. Sembunyikan Footer Streamlit */
             footer {visibility: hidden;}
-            
-            /* 3. Sembunyikan Garis Warna-warni di Atas */
+            header {visibility: hidden;} /* Header hilang total = Logo hilang total */
+            [data-testid="stToolbar"] {visibility: hidden;}
             [data-testid="stDecoration"] {display: none;}
-            
-            /* 4. Sembunyikan Tombol Deploy (Pojok Kanan Atas) */
             .stAppDeployButton {display: none !important;}
-            
-            /* 5. Sembunyikan Badge Fork/Viewer (Pojok Kanan Atas) */
-            /* Menggunakan selector atribut agar kena walau nama class berubah */
-            div[data-testid="stStatusWidget"] {display: none !important;}
             div[class*="viewerBadge"] {display: none !important;}
+            
+            /* Mengatur padding atas agar judul tidak tertutup karena header hilang */
+            .block-container {
+                padding-top: 2rem;
+            }
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 NAMA_GOOGLE_SHEET = "Database_Diklat_DJBC"
 
-# Inisialisasi Session State
 if 'history_log' not in st.session_state:
     st.session_state['history_log'] = pd.DataFrame(columns=['TIMESTAMP', 'NAMA', 'NIP', 'DIKLAT', 'SATKER'])
 if 'uploader_key' not in st.session_state:
@@ -94,9 +91,8 @@ def reset_app():
     st.rerun()
 
 # =============================================================================
-# 2. FUNGSI LOGIKA (NIP INTELLIGENCE & WORD)
+# 2. FUNGSI LOGIKA
 # =============================================================================
-
 def calculate_age_from_nip(nip_str):
     try:
         clean_nip = str(nip_str).replace(" ", "").replace(".", "").replace("-", "")
@@ -104,8 +100,7 @@ def calculate_age_from_nip(nip_str):
         if year_str.isdigit():
             birth_year = int(year_str)
             current_year = datetime.datetime.now().year
-            if 1950 <= birth_year <= current_year:
-                return current_year - birth_year
+            if 1950 <= birth_year <= current_year: return current_year - birth_year
         return None
     except: return None
 
@@ -135,21 +130,16 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
         run = p.add_run(text); run.font.name = JENIS_FONT; run.font.size = Pt(size); run.bold = bold
     isi_sel(0, 0, "LAMPIRAN II", 11); header_table.cell(0, 2).merge(header_table.cell(0, 0)); header_table.cell(0,0).text="LAMPIRAN II"
     isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); header_table.cell(1, 2).merge(header_table.cell(1, 0)); header_table.cell(1,0).text=f"Nota Dinas {jabatan_ttd}"
-    
     isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val))
     isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val))
-
     doc.add_paragraph(""); p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = p.runs[0]; run.bold = True; run.font.name = JENIS_FONT; run.font.size = Pt(12) 
     info_table = doc.add_table(rows=3, cols=3); 
     infos = [("Nama Pelatihan", judul), ("Tanggal", tgl_pel), ("Penyelenggara", tempat_pel)]
     for r, (l, v) in enumerate(infos): info_table.cell(r,0).text = l; info_table.cell(r,1).text = ":"; info_table.cell(r,2).text = v
     doc.add_paragraph(""); table = doc.add_table(rows=2, cols=5); table.style = 'Table Grid'
-    headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']
-    widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
-    for i in range(5): 
-        table.rows[0].cells[i].text = headers[i]; table.rows[0].cells[i].width = widths[i]
-        table.rows[0].cells[i].paragraphs[0].runs[0].bold = True
+    headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']; widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
+    for i in range(5): table.rows[0].cells[i].text = headers[i]; table.rows[0].cells[i].width = widths[i]; table.rows[0].cells[i].paragraphs[0].runs[0].bold = True
     vals = [row.get('NO','-'), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
     for i in range(5): table.rows[1].cells[i].text = str(vals[i])
     doc.add_paragraph(""); ttd_table = doc.add_table(rows=1, cols=2)
@@ -167,7 +157,6 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     p_foot = section.footer.paragraphs[0]; p_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = p_foot.add_run(); run._r.append(OxmlElement('w:fldChar')); run._r[-1].set(qn('w:fldCharType'), 'begin')
     run._r.append(OxmlElement('w:instrText')); run._r[-1].text = "PAGE"; run._r.append(OxmlElement('w:fldChar')); run._r[-1].set(qn('w:fldCharType'), 'end')
-
     col_judul = 'JUDUL_PELATIHAN' if 'JUDUL_PELATIHAN' in df.columns else df.columns[0]
     kelompok = df.groupby(col_judul); counter = 0
     for judul, group in kelompok:
@@ -182,7 +171,6 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
         c = isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); c.merge(header_table.cell(1, 2))
         isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val))
         isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val))
-
         doc.add_paragraph(""); p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.runs[0]; run.bold = True; run.font.name = JENIS_FONT; run.font.size = Pt(12) 
         info_table = doc.add_table(rows=3, cols=3); info_table.autofit = False
@@ -206,44 +194,52 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     doc.save(output); output.seek(0)
     return output
 
-def generate_zip_files(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        for idx, row in df.iterrows():
-            judul = row.get('JUDUL_PELATIHAN', 'Diklat')
-            nama_file = f"{str(row.get('NAMA','Peserta')).replace(' ', '_')}_{str(row.get('NIP','000'))}.docx"
-            doc_buffer = create_single_document(row, judul, row.get('TANGGAL_PELATIHAN','-'), row.get('TEMPAT','-'), nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val)
-            zip_file.writestr(nama_file, doc_buffer.getvalue())
-    zip_buffer.seek(0)
-    return zip_buffer
-
 # =============================================================================
-# 3. GUI & MAIN
+# 3. GUI & MAIN (TABS LAYOUT)
 # =============================================================================
-with st.sidebar:
-    st.header("📂 Upload Data")
-    uploaded_file = st.file_uploader("Upload Excel", type=['xlsx'], label_visibility="collapsed", key=f"uploader_{st.session_state['uploader_key']}")
-    
-    df_dummy = pd.DataFrame({"JUDUL_PELATIHAN": ["Diklat A"], "TANGGAL_PELATIHAN": ["Jan 2025"], "TEMPAT": ["Pusdiklat"], "NO": [1], "NAMA PEGAWAI": ["Fajar"], "NIP": ["199901012024121001"], "PANGKAT": ["II/c"], "SATUAN KERJA": ["KPU Batam"]})
-    buffer = io.BytesIO(); 
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer: df_dummy.to_excel(writer, index=False)
-    buffer.seek(0)
-    st.download_button("📥 Download Template", buffer, "Template_Peserta.xlsx", use_container_width=True)
-    
-    st.markdown("---")
-    st.markdown("### ✍️ Detail Nota Dinas")
-    nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
-    jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
-    
-    nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
-    tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
-    
-    st.markdown("---")
-    if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
 
 st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
 st.markdown("---")
 
+# STRUKTUR NAVIGASI BARU (TOP TABS)
+# Menu setup yang tadinya di Sidebar, pindah ke Tab 1
+tab_setup, tab_gen, tab_dash, tab_db = st.tabs([
+    "⚙️ Setup Data", 
+    "📝 Generator", 
+    "📊 Dashboard", 
+    "☁️ Database"
+])
+
+# --- TAB 1: SETUP (PENGGANTI SIDEBAR) ---
+with tab_setup:
+    col_up, col_form = st.columns([1, 2])
+    
+    with col_up:
+        st.subheader("📂 1. Upload File")
+        uploaded_file = st.file_uploader("Pilih Excel Peserta", type=['xlsx'], key=f"uploader_{st.session_state['uploader_key']}")
+        
+        # Tombol Template
+        df_dummy = pd.DataFrame({"JUDUL_PELATIHAN": ["Diklat A"], "TANGGAL_PELATIHAN": ["Jan 2025"], "TEMPAT": ["Pusdiklat"], "NO": [1], "NAMA PEGAWAI": ["Fajar"], "NIP": ["199901012024121001"], "PANGKAT": ["II/c"], "SATUAN KERJA": ["KPU Batam"]})
+        buffer = io.BytesIO(); 
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer: df_dummy.to_excel(writer, index=False)
+        buffer.seek(0)
+        st.download_button("📥 Download Template Excel", buffer, "Template_Peserta.xlsx", use_container_width=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔄 Reset / Hapus Data", type="secondary", use_container_width=True): reset_app()
+
+    with col_form:
+        st.subheader("✍️ 2. Detail Tanda Tangan")
+        c1, c2 = st.columns(2)
+        with c1:
+            nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
+            jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
+        with c2:
+            nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
+            tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
+        st.info("💡 Data ini akan otomatis masuk ke Header Surat.")
+
+# --- LOGIKA APLIKASI UTAMA ---
 if uploaded_file:
     try:
         df_raw = pd.read_excel(uploaded_file, dtype=str)
@@ -260,26 +256,29 @@ if uploaded_file:
             else: clean_cols[col] = upper_col 
         df_raw = df_raw.rename(columns=clean_cols).fillna("-")
         
-        # PROSES DATA ANALITIK
         if 'NIP' in df_raw.columns:
             df_raw['USIA'] = df_raw['NIP'].apply(calculate_age_from_nip)
             df_raw['GENDER'] = df_raw['NIP'].apply(get_gender_from_nip)
         else:
             df_raw['USIA'] = None; df_raw['GENDER'] = "Tidak Diketahui"
 
-        tab1, tab2, tab3 = st.tabs(["📝 Generator", "📊 Dashboard", "☁️ Database"])
-        
-        with tab1:
-            st.info("💡 Edit data di bawah ini. Tombol download siap ditekan.")
+        # --- TAB 2: GENERATOR ---
+        with tab_gen:
+            st.success("✅ Data berhasil dibaca! Silakan cek tabel di bawah dan download hasilnya.")
             df_edited = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
             ts = datetime.datetime.now().strftime("%H%M%S")
+            
+            # Pre-calculate
             word_buffer = generate_word_combined(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
             zip_buffer = generate_zip_files(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
-            c1, c2 = st.columns(2)
-            with c1: st.download_button("⚡ Download Lampiran ND (.docx)", word_buffer, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
-            with c2: st.download_button("⚡ Download Arsip ZIP", zip_buffer, f"Arsip_{ts}.zip", "application/zip", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
+            
+            # Tombol Download Besar
+            c_d1, c_d2 = st.columns(2)
+            with c_d1: st.download_button("📄 Download Lampiran ND (.docx)", word_buffer, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
+            with c_d2: st.download_button("📦 Download Arsip ZIP", zip_buffer, f"Arsip_{ts}.zip", "application/zip", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
 
-        with tab2: # DASHBOARD
+        # --- TAB 3: DASHBOARD ---
+        with tab_dash:
             df_viz = df_edited
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Total Peserta", len(df_viz))
@@ -321,7 +320,8 @@ if uploaded_file:
                     st.pyplot(fig2); plt.close(fig2)
                 else: st.warning("Data Pangkat tidak tersedia.")
 
-        with tab3: # DATABASE
+        # --- TAB 4: DATABASE ---
+        with tab_db:
             st.subheader("🔗 Status Database")
             sheet = connect_to_gsheet()
             if sheet:
@@ -329,6 +329,11 @@ if uploaded_file:
                 if st.button("🔄 Refresh Data"): st.dataframe(pd.DataFrame(sheet.get_all_records()))
             else: st.error("❌ Belum terhubung.")
 
-    except Exception as e: st.error(f"Error: {e}")
+    except Exception as e: 
+        st.error(f"Error: {e}")
+        st.warning("Pastikan file Excel sesuai format Template.")
+
 else:
-    st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
+    # Tampilan Awal di Tab Setup jika belum upload
+    with tab_gen: st.info("👈 Silakan upload file Excel di Tab 'Setup Data' terlebih dahulu.")
+    with tab_dash: st.info("👈 Silakan upload file Excel di Tab 'Setup Data' terlebih dahulu.")
