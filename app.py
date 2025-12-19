@@ -26,7 +26,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed" 
 )
 
-# --- CSS PEMBASMI LOGO (AGRESIF & AMAN) ---
+# --- CSS PEMBASMI LOGO & HEADER ---
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -38,7 +38,7 @@ hide_st_style = """
             div[class*="viewerBadge"] {display: none !important;}
             
             .block-container {
-                padding-top: 2rem;
+                padding-top: 1rem; /* Padding atas lebih tipis agar muat banyak */
             }
             </style>
             """
@@ -191,7 +191,6 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     doc.save(output); output.seek(0)
     return output
 
-# --- FUNGSI YANG TADI HILANG (FIXED) ---
 def generate_zip_files(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
@@ -204,140 +203,152 @@ def generate_zip_files(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     return zip_buffer
 
 # =============================================================================
-# 3. GUI & MAIN (TABS LAYOUT)
+# 3. GUI & MAIN (ALL-IN-ONE LAYOUT)
 # =============================================================================
 
 st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
 st.markdown("---")
 
-# STRUKTUR NAVIGASI BARU (TOP TABS)
-tab_setup, tab_gen, tab_dash, tab_db = st.tabs([
-    "⚙️ Setup Data", 
-    "📝 Generator", 
+# HANYA ADA 3 TAB SEKARANG (Generator & Setup GABUNG)
+tab_main, tab_dash, tab_db = st.tabs([
+    "🚀 Generator (All-in-One)", 
     "📊 Dashboard", 
     "☁️ Database"
 ])
 
-# --- TAB 1: SETUP ---
-with tab_setup:
-    col_up, col_form = st.columns([1, 2])
+# --- TAB 1: GENERATOR LENGKAP (INPUT + TABEL + DOWNLOAD) ---
+with tab_main:
+    # AREA INPUT (Dibuat 3 Kolom agar rapi mendatar)
+    c_up, c_ttd, c_nd = st.columns([1.5, 1.5, 1.5])
     
-    with col_up:
-        st.subheader("📂 1. Upload File")
-        uploaded_file = st.file_uploader("Pilih Excel Peserta", type=['xlsx'], key=f"uploader_{st.session_state['uploader_key']}")
+    with c_up:
+        st.markdown("###### 1. Upload Data")
+        uploaded_file = st.file_uploader("Upload Excel", type=['xlsx'], label_visibility="collapsed", key=f"uploader_{st.session_state['uploader_key']}")
         
-        df_dummy = pd.DataFrame({"JUDUL_PELATIHAN": ["Diklat A"], "TANGGAL_PELATIHAN": ["Jan 2025"], "TEMPAT": ["Pusdiklat"], "NO": [1], "NAMA PEGAWAI": ["Fajar"], "NIP": ["199901012024121001"], "PANGKAT": ["II/c"], "SATUAN KERJA": ["KPU Batam"]})
-        buffer = io.BytesIO(); 
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer: df_dummy.to_excel(writer, index=False)
-        buffer.seek(0)
-        st.download_button("📥 Download Template Excel", buffer, "Template_Peserta.xlsx", use_container_width=True)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔄 Reset / Hapus Data", type="secondary", use_container_width=True): reset_app()
+        # Tombol-tombol kecil di bawah upload
+        sc1, sc2 = st.columns(2)
+        with sc1:
+            df_dummy = pd.DataFrame({"JUDUL_PELATIHAN": ["Diklat A"], "TANGGAL_PELATIHAN": ["Jan 2025"], "TEMPAT": ["Pusdiklat"], "NO": [1], "NAMA PEGAWAI": ["Fajar"], "NIP": ["199901012024121001"], "PANGKAT": ["II/c"], "SATUAN KERJA": ["KPU Batam"]})
+            buffer = io.BytesIO(); 
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer: df_dummy.to_excel(writer, index=False)
+            buffer.seek(0)
+            st.download_button("📥 Template", buffer, "Template_Peserta.xlsx", use_container_width=True)
+        with sc2:
+            if st.button("🔄 Reset", type="secondary", use_container_width=True): reset_app()
 
-    with col_form:
-        st.subheader("✍️ 2. Detail Tanda Tangan")
-        c1, c2 = st.columns(2)
-        with c1:
-            nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
-            jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
-        with c2:
-            nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
-            tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
-        st.info("💡 Data ini akan otomatis masuk ke Header Surat.")
+    with c_ttd:
+        st.markdown("###### 2. Pejabat Tanda Tangan")
+        nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
+        jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
 
-# --- LOGIKA APLIKASI UTAMA ---
-if uploaded_file:
-    try:
-        df_raw = pd.read_excel(uploaded_file, dtype=str)
-        clean_cols = {}
-        for col in df_raw.columns:
-            upper_col = col.strip().upper().replace(" ", "_").replace("-", "_")
-            if "NAMA" in upper_col: clean_cols[col] = "NAMA"
-            elif "NIP" in upper_col: clean_cols[col] = "NIP"
-            elif "PANGKAT" in upper_col or "GOL" in upper_col: clean_cols[col] = "PANGKAT"
-            elif "KERJA" in upper_col or "SATKER" in upper_col: clean_cols[col] = "SATKER"
-            elif "TEMPAT" in upper_col: clean_cols[col] = "TEMPAT"
-            elif "JUDUL" in upper_col or "DIKLAT" in upper_col: clean_cols[col] = "JUDUL_PELATIHAN"
-            elif "TANGGAL" in upper_col: clean_cols[col] = "TANGGAL_PELATIHAN"
-            else: clean_cols[col] = upper_col 
-        df_raw = df_raw.rename(columns=clean_cols).fillna("-")
-        
-        if 'NIP' in df_raw.columns:
-            df_raw['USIA'] = df_raw['NIP'].apply(calculate_age_from_nip)
-            df_raw['GENDER'] = df_raw['NIP'].apply(get_gender_from_nip)
-        else:
-            df_raw['USIA'] = None; df_raw['GENDER'] = "Tidak Diketahui"
+    with c_nd:
+        st.markdown("###### 3. Detail Nota Dinas")
+        nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
+        tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
 
-        # --- TAB 2: GENERATOR ---
-        with tab_gen:
-            st.success("✅ Data berhasil dibaca! Silakan cek tabel di bawah dan download hasilnya.")
-            df_edited = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
-            ts = datetime.datetime.now().strftime("%H%M%S")
+    st.divider() # Garis pemisah antara Input dan Output
+
+    # AREA OUTPUT (Tabel & Download)
+    if uploaded_file:
+        try:
+            df_raw = pd.read_excel(uploaded_file, dtype=str)
+            # Normalisasi Kolom
+            clean_cols = {}
+            for col in df_raw.columns:
+                upper_col = col.strip().upper().replace(" ", "_").replace("-", "_")
+                if "NAMA" in upper_col: clean_cols[col] = "NAMA"
+                elif "NIP" in upper_col: clean_cols[col] = "NIP"
+                elif "PANGKAT" in upper_col or "GOL" in upper_col: clean_cols[col] = "PANGKAT"
+                elif "KERJA" in upper_col or "SATKER" in upper_col: clean_cols[col] = "SATKER"
+                elif "TEMPAT" in upper_col: clean_cols[col] = "TEMPAT"
+                elif "JUDUL" in upper_col or "DIKLAT" in upper_col: clean_cols[col] = "JUDUL_PELATIHAN"
+                elif "TANGGAL" in upper_col: clean_cols[col] = "TANGGAL_PELATIHAN"
+                else: clean_cols[col] = upper_col 
+            df_raw = df_raw.rename(columns=clean_cols).fillna("-")
             
+            # Proses NIP
+            if 'NIP' in df_raw.columns:
+                df_raw['USIA'] = df_raw['NIP'].apply(calculate_age_from_nip)
+                df_raw['GENDER'] = df_raw['NIP'].apply(get_gender_from_nip)
+            else:
+                df_raw['USIA'] = None; df_raw['GENDER'] = "Tidak Diketahui"
+
+            # Tampilan Tabel
+            st.markdown("###### 4. Preview & Edit Data")
+            df_edited = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
+            
+            # Generate Files
+            ts = datetime.datetime.now().strftime("%H%M%S")
             word_buffer = generate_word_combined(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
             zip_buffer = generate_zip_files(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
             
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Tampilan Tombol Download
             c_d1, c_d2 = st.columns(2)
-            with c_d1: st.download_button("📄 Download Lampiran ND (.docx)", word_buffer, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
-            with c_d2: st.download_button("📦 Download Arsip ZIP", zip_buffer, f"Arsip_{ts}.zip", "application/zip", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
+            with c_d1: 
+                st.download_button("📄 Download Lampiran ND (.docx)", word_buffer, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
+            with c_d2: 
+                st.download_button("📦 Download Arsip ZIP", zip_buffer, f"Arsip_{ts}.zip", "application/zip", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
 
-        # --- TAB 3: DASHBOARD ---
-        with tab_dash:
-            df_viz = df_edited
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Peserta", len(df_viz))
-            jml_pelatihan = df_viz['JUDUL_PELATIHAN'].nunique() if 'JUDUL_PELATIHAN' in df_viz.columns else 0
-            c2.metric("Jumlah Pelatihan", jml_pelatihan)
-            avg_age = df_viz['USIA'].mean() if 'USIA' in df_viz.columns else 0
-            c3.metric("Rata-rata Usia", f"{avg_age:.0f} Tahun" if pd.notna(avg_age) else "-")
-            c4.metric("Satker", df_viz['SATKER'].nunique() if 'SATKER' in df_viz.columns else 0)
+        except Exception as e:
+            st.error(f"Terjadi kesalahan pembacaan file: {e}")
+            st.warning("Pastikan Anda menggunakan Template Excel yang benar.")
+    else:
+        # Pesan Kosong yang estetik
+        st.info("👈 Silakan upload file Excel pada panel di atas untuk memulai.")
 
-            st.markdown("---")
-            col_g1, col_g2 = st.columns(2)
-            with col_g1:
-                st.subheader("🎂 Distribusi Usia")
-                if 'USIA' in df_viz.columns and df_viz['USIA'].notna().any():
-                    age_counts = df_viz['USIA'].dropna().astype(int).value_counts().sort_index()
-                    st.bar_chart(age_counts, color="#3498DB")
-                else: st.warning("Data Usia tidak tersedia.")
-            with col_g2:
-                st.subheader("👥 Pria vs Wanita")
-                if 'GENDER' in df_viz.columns:
-                    gender_counts = df_viz['GENDER'].value_counts()
-                    fig, ax = plt.subplots(figsize=(5, 4))
-                    colors = ['#3498DB', '#E91E63', '#95A5A6']
-                    ax.pie(gender_counts, labels=gender_counts.index, autopct='%1.1f%%', startangle=90, colors=colors[:len(gender_counts)])
-                    centre_circle = plt.Circle((0,0),0.70,fc='white'); fig.gca().add_artist(centre_circle); ax.axis('equal')  
-                    st.pyplot(fig); plt.close(fig)
-                else: st.warning("Data Gender tidak tersedia.")
-            st.markdown("---")
-            col_g3, col_g4 = st.columns(2)
-            with col_g3:
-                st.subheader("🏢 Top 5 Satker")
-                if 'SATKER' in df_viz.columns: st.bar_chart(df_viz['SATKER'].value_counts().head(5), color="#E67E22")
-            with col_g4:
-                st.subheader("👮 Komposisi Pangkat")
-                if 'PANGKAT' in df_viz.columns:
-                    pangkat_counts = df_viz['PANGKAT'].value_counts()
-                    fig2, ax2 = plt.subplots(figsize=(5,4))
-                    ax2.pie(pangkat_counts, labels=pangkat_counts.index, autopct='%1.1f%%', startangle=90)
-                    st.pyplot(fig2); plt.close(fig2)
-                else: st.warning("Data Pangkat tidak tersedia.")
+# --- TAB 2: DASHBOARD (VISUALISASI) ---
+with tab_dash:
+    if uploaded_file and 'df_edited' in locals():
+        df_viz = df_edited
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Peserta", len(df_viz))
+        jml_pelatihan = df_viz['JUDUL_PELATIHAN'].nunique() if 'JUDUL_PELATIHAN' in df_viz.columns else 0
+        c2.metric("Jumlah Pelatihan", jml_pelatihan)
+        avg_age = df_viz['USIA'].mean() if 'USIA' in df_viz.columns else 0
+        c3.metric("Rata-rata Usia", f"{avg_age:.0f} Tahun" if pd.notna(avg_age) else "-")
+        c4.metric("Satker", df_viz['SATKER'].nunique() if 'SATKER' in df_viz.columns else 0)
 
-        # --- TAB 4: DATABASE ---
-        with tab_db:
-            st.subheader("🔗 Status Database")
-            sheet = connect_to_gsheet()
-            if sheet:
-                st.success(f"✅ Terhubung ke: {NAMA_GOOGLE_SHEET}")
-                if st.button("🔄 Refresh Data"): st.dataframe(pd.DataFrame(sheet.get_all_records()))
-            else: st.error("❌ Belum terhubung.")
+        st.markdown("---")
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            st.subheader("🎂 Distribusi Usia")
+            if 'USIA' in df_viz.columns and df_viz['USIA'].notna().any():
+                age_counts = df_viz['USIA'].dropna().astype(int).value_counts().sort_index()
+                st.bar_chart(age_counts, color="#3498DB")
+            else: st.warning("Data Usia tidak tersedia.")
+        with col_g2:
+            st.subheader("👥 Pria vs Wanita")
+            if 'GENDER' in df_viz.columns:
+                gender_counts = df_viz['GENDER'].value_counts()
+                fig, ax = plt.subplots(figsize=(5, 4))
+                colors = ['#3498DB', '#E91E63', '#95A5A6']
+                ax.pie(gender_counts, labels=gender_counts.index, autopct='%1.1f%%', startangle=90, colors=colors[:len(gender_counts)])
+                centre_circle = plt.Circle((0,0),0.70,fc='white'); fig.gca().add_artist(centre_circle); ax.axis('equal')  
+                st.pyplot(fig); plt.close(fig)
+            else: st.warning("Data Gender tidak tersedia.")
+        st.markdown("---")
+        col_g3, col_g4 = st.columns(2)
+        with col_g3:
+            st.subheader("🏢 Top 5 Satker")
+            if 'SATKER' in df_viz.columns: st.bar_chart(df_viz['SATKER'].value_counts().head(5), color="#E67E22")
+        with col_g4:
+            st.subheader("👮 Komposisi Pangkat")
+            if 'PANGKAT' in df_viz.columns:
+                pangkat_counts = df_viz['PANGKAT'].value_counts()
+                fig2, ax2 = plt.subplots(figsize=(5,4))
+                ax2.pie(pangkat_counts, labels=pangkat_counts.index, autopct='%1.1f%%', startangle=90)
+                st.pyplot(fig2); plt.close(fig2)
+            else: st.warning("Data Pangkat tidak tersedia.")
+    else:
+        st.info("Silakan upload data di Tab 'Generator' terlebih dahulu.")
 
-    except Exception as e: 
-        st.error(f"Error: {e}")
-        st.warning("Pastikan file Excel sesuai format Template.")
-
-else:
-    with tab_gen: st.info("👈 Silakan upload file Excel di Tab 'Setup Data' terlebih dahulu.")
-    with tab_dash: st.info("👈 Silakan upload file Excel di Tab 'Setup Data' terlebih dahulu.")
+# --- TAB 3: DATABASE ---
+with tab_db:
+    st.subheader("🔗 Status Database")
+    sheet = connect_to_gsheet()
+    if sheet:
+        st.success(f"✅ Terhubung ke: {NAMA_GOOGLE_SHEET}")
+        if st.button("🔄 Refresh Data"): st.dataframe(pd.DataFrame(sheet.get_all_records()))
+    else: st.error("❌ Belum terhubung.")
