@@ -94,9 +94,8 @@ def calculate_age_from_nip(nip_str):
 def get_gender_from_nip(nip_str):
     try:
         clean_nip = str(nip_str).replace(" ", "").replace(".", "").replace("-", "")
-        # Validasi panjang NIP harus minimal 15 karakter
         if len(clean_nip) >= 15:
-            code = clean_nip[14] # Digit ke-15 (Index 14)
+            code = clean_nip[14] # Digit ke-15
             if code == '1': return "Pria"
             elif code == '2': return "Wanita"
         return "Tidak Diketahui"
@@ -223,13 +222,13 @@ with st.sidebar:
     st.markdown("### ✍️ Detail Nota Dinas")
     nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
     jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
-    nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
-    tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
+    nomor_nd = st.text_input("Nomor ND", "ND-...../...../2025")
+    tanggal_nd = st.text_input("Tanggal ND", "..... ................. 2025")
     
     st.markdown("---")
     if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
 
-st.title("Admin Diklat DJBC 🇮🇩")
+st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
 st.markdown("---")
 
 if uploaded_file:
@@ -274,13 +273,9 @@ if uploaded_file:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Total Peserta", len(df_viz))
             
-            # Metric Gender
-            pct_pria = 0
-            if 'GENDER' in df_viz.columns:
-                counts = df_viz['GENDER'].value_counts()
-                total = counts.sum()
-                if total > 0 and 'Pria' in counts: pct_pria = (counts['Pria'] / total) * 100
-            c2.metric("Proporsi Pria", f"{pct_pria:.1f}%")
+            # UPDATE: METRIK "JUMLAH PELATIHAN"
+            jml_pelatihan = df_viz['JUDUL_PELATIHAN'].nunique() if 'JUDUL_PELATIHAN' in df_viz.columns else 0
+            c2.metric("Jumlah Pelatihan", jml_pelatihan)
 
             # Metric Usia
             avg_age = df_viz['USIA'].mean() if 'USIA' in df_viz.columns else 0
@@ -290,7 +285,7 @@ if uploaded_file:
 
             st.markdown("---")
             
-            # --- GRAFIK BARIS 1: USIA & GENDER ---
+            # --- GRAFIK BARIS 1 ---
             col_g1, col_g2 = st.columns(2)
             
             with col_g1:
@@ -304,21 +299,17 @@ if uploaded_file:
                 st.subheader("👥 Pria vs Wanita")
                 if 'GENDER' in df_viz.columns:
                     gender_counts = df_viz['GENDER'].value_counts()
-                    # Donut Chart Logic
                     fig, ax = plt.subplots(figsize=(5, 4))
                     colors = ['#3498DB', '#E91E63', '#95A5A6'] # Biru, Pink, Abu
-                    labels = gender_counts.index
-                    # Pastikan urutan warna match dengan label jika bisa, tapi default cukup
-                    wedges, texts, autotexts = ax.pie(gender_counts, labels=labels, autopct='%1.1f%%', 
-                                                      startangle=90, colors=colors[:len(labels)], pctdistance=0.85)
-                    # Draw Circle for Donut
+                    wedges, texts, autotexts = ax.pie(gender_counts, labels=gender_counts.index, autopct='%1.1f%%', 
+                                                      startangle=90, colors=colors[:len(gender_counts)], pctdistance=0.85)
                     centre_circle = plt.Circle((0,0),0.70,fc='white')
                     fig.gca().add_artist(centre_circle)
                     ax.axis('equal')  
                     st.pyplot(fig); plt.close(fig)
                 else: st.warning("Data Gender tidak tersedia.")
 
-            # --- GRAFIK BARIS 2: SATKER & PANGKAT ---
+            # --- GRAFIK BARIS 2 ---
             st.markdown("---")
             col_g3, col_g4 = st.columns(2)
             with col_g3:
@@ -326,9 +317,15 @@ if uploaded_file:
                 if 'SATKER' in df_viz.columns: st.bar_chart(df_viz['SATKER'].value_counts().head(5), color="#E67E22")
             
             with col_g4:
-                st.subheader("👮 Pangkat")
+                # UPDATE: PANGKAT JADI PIE CHART
+                st.subheader("👮 Komposisi Pangkat")
                 if 'PANGKAT' in df_viz.columns:
-                    st.bar_chart(df_viz['PANGKAT'].value_counts(), color="#27AE60")
+                    pangkat_counts = df_viz['PANGKAT'].value_counts()
+                    fig2, ax2 = plt.subplots(figsize=(5,4))
+                    ax2.pie(pangkat_counts, labels=pangkat_counts.index, autopct='%1.1f%%', startangle=90)
+                    st.pyplot(fig2); plt.close(fig2)
+                else:
+                    st.warning("Data Pangkat tidak tersedia.")
 
         with tab3:
             st.subheader("🔗 Status Database")
