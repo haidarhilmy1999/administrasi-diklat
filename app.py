@@ -20,7 +20,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 # 1. KONFIGURASI HALAMAN (LAYOUT ATAS)
 # =============================================================================
 st.set_page_config(
-    page_title="Sistem Diklat DJBC Online", 
+    page_title="Admin Diklat BC", 
     layout="wide", 
     page_icon="⚡",
     initial_sidebar_state="collapsed" 
@@ -206,12 +206,12 @@ def generate_zip_files(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
 # 3. GUI & MAIN (ALL-IN-ONE LAYOUT)
 # =============================================================================
 
-st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
+st.title("Admin Diklat DJBC 🇮🇩")
 st.markdown("---")
 
 # HANYA ADA 3 TAB SEKARANG (Generator & Setup GABUNG)
 tab_main, tab_dash, tab_db = st.tabs([
-    "🚀 Generator (All-in-One)", 
+    "🚀 Generator", 
     "📊 Dashboard", 
     "☁️ Database"
 ])
@@ -222,7 +222,7 @@ with tab_main:
     c_up, c_ttd, c_nd = st.columns([1.5, 1.5, 1.5])
     
     with c_up:
-        st.markdown("###### 1. Upload Data")
+        st.markdown("###### Upload Data")
         uploaded_file = st.file_uploader("Upload Excel", type=['xlsx'], label_visibility="collapsed", key=f"uploader_{st.session_state['uploader_key']}")
         
         # Tombol-tombol kecil di bawah upload
@@ -237,12 +237,12 @@ with tab_main:
             if st.button("🔄 Reset", type="secondary", use_container_width=True): reset_app()
 
     with c_ttd:
-        st.markdown("###### 2. Pejabat Tanda Tangan")
+        st.markdown("###### Pejabat Tanda Tangan")
         nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
         jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
 
     with c_nd:
-        st.markdown("###### 3. Detail Nota Dinas")
+        st.markdown("###### Detail Nota Dinas")
         nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
         tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
 
@@ -274,7 +274,7 @@ with tab_main:
                 df_raw['USIA'] = None; df_raw['GENDER'] = "Tidak Diketahui"
 
             # Tampilan Tabel
-            st.markdown("###### 4. Preview & Edit Data")
+            st.markdown("###### Preview & Edit Data")
             df_edited = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
             
             # Generate Files
@@ -352,3 +352,4 @@ with tab_db:
         st.success(f"✅ Terhubung ke: {NAMA_GOOGLE_SHEET}")
         if st.button("🔄 Refresh Data"): st.dataframe(pd.DataFrame(sheet.get_all_records()))
     else: st.error("❌ Belum terhubung.")
+
