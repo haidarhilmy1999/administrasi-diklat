@@ -34,20 +34,20 @@ NAMA_GOOGLE_SHEET = "Database_Diklat_DJBC"
 
 if 'history_log' not in st.session_state:
     st.session_state['history_log'] = pd.DataFrame(columns=['TIMESTAMP', 'NAMA', 'NIP', 'DIKLAT', 'SATKER'])
+if 'uploader_key' not in st.session_state:
+    st.session_state['uploader_key'] = 0
 
-# --- FUNGSI DATABASE (CALLBACK) ---
+# --- FUNGSI DATABASE ---
 def connect_to_gsheet():
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds_dict = dict(st.secrets["gcp_service_account"])
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        sheet = client.open(NAMA_GOOGLE_SHEET).sheet1
-        return sheet
+        return client.open(NAMA_GOOGLE_SHEET).sheet1
     except: return None
 
 def save_to_cloud_callback(df_input):
-    """Fungsi ini dipanggil otomatis SAAT tombol download diklik"""
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         data_to_save = df_input.copy()
@@ -58,36 +58,58 @@ def save_to_cloud_callback(df_input):
                 if target in col: 
                     final_cols[col] = target if target != 'JUDUL_PELATIHAN' else 'DIKLAT'
                     break
-        
         if final_cols:
             data_to_save = data_to_save[list(final_cols.keys())].rename(columns=final_cols)
             data_to_save.insert(0, 'TIMESTAMP', current_time)
             st.session_state['history_log'] = pd.concat([st.session_state['history_log'], data_to_save], ignore_index=True)
-            
             sheet = connect_to_gsheet()
             if sheet:
-                data_list = data_to_save.astype(str).values.tolist()
-                sheet.append_rows(data_list)
+                sheet.append_rows(data_to_save.astype(str).values.tolist())
                 st.toast("✅ Data riwayat berhasil disimpan ke Cloud!", icon="☁️")
-            else:
-                st.toast("⚠️ Gagal koneksi Cloud, tapi file tetap terdownload.", icon="📂")
-    except Exception as e:
-        st.toast(f"Error Database: {e}", icon="❌")
+            else: st.toast("⚠️ Gagal koneksi Cloud, tapi file tetap terdownload.", icon="📂")
+    except Exception as e: st.toast(f"Error Database: {e}", icon="❌")
+
+def reset_app():
+    st.session_state['uploader_key'] += 1
+    st.rerun()
 
 # =============================================================================
-# 2. FUNGSI GENERATOR DOKUMEN
+# 2. FUNGSI LOGIKA (NIP INTELLIGENCE)
 # =============================================================================
 
+# --- HITUNG USIA ---
+def calculate_age_from_nip(nip_str):
+    try:
+        clean_nip = str(nip_str).replace(" ", "").replace(".", "").replace("-", "")
+        year_str = clean_nip[:4] # 4 Digit pertama = Tahun Lahir
+        if year_str.isdigit():
+            birth_year = int(year_str)
+            current_year = datetime.datetime.now().year
+            if 1950 <= birth_year <= current_year:
+                return current_year - birth_year
+        return None
+    except: return None
+
+# --- CEK GENDER ---
+def get_gender_from_nip(nip_str):
+    try:
+        clean_nip = str(nip_str).replace(" ", "").replace(".", "").replace("-", "")
+        # Validasi panjang NIP harus minimal 15 karakter
+        if len(clean_nip) >= 15:
+            code = clean_nip[14] # Digit ke-15 (Index 14)
+            if code == '1': return "Pria"
+            elif code == '2': return "Wanita"
+        return "Tidak Diketahui"
+    except: return "Tidak Diketahui"
+
+# --- WORD GENERATOR ---
 def set_repeat_table_header(row):
     tr = row._tr; trPr = tr.get_or_add_trPr()
-    tblHeader = OxmlElement('w:tblHeader'); tblHeader.set(qn('w:val'), "true")
-    trPr.append(tblHeader)
+    tblHeader = OxmlElement('w:tblHeader'); tblHeader.set(qn('w:val'), "true"); trPr.append(tblHeader)
 
-# FUNGSI UNTUK ZIP (PER PESERTA)
 def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     JENIS_FONT = 'Arial'; UKURAN_FONT = 11
-    doc = Document()
-    style = doc.styles['Normal']; style.font.name = JENIS_FONT; style.font.size = Pt(UKURAN_FONT)
+    doc = Document(); style = doc.styles['Normal']; style.font.name = JENIS_FONT; style.font.size = Pt(UKURAN_FONT)
     section = doc.sections[0]; section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54)
     section.left_margin = Cm(2.54); section.right_margin = Cm(2.54)
 
@@ -108,51 +130,35 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     infos = [("Nama Pelatihan", judul), ("Tanggal", tgl_pel), ("Penyelenggara", tempat_pel)]
     for r, (l, v) in enumerate(infos): info_table.cell(r,0).text = l; info_table.cell(r,1).text = ":"; info_table.cell(r,2).text = v
 
-    doc.add_paragraph("")
-    table = doc.add_table(rows=2, cols=5); table.style = 'Table Grid'
+    doc.add_paragraph(""); table = doc.add_table(rows=2, cols=5); table.style = 'Table Grid'
     headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']
     widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
     for i in range(5): 
         table.rows[0].cells[i].text = headers[i]; table.rows[0].cells[i].width = widths[i]
         table.rows[0].cells[i].paragraphs[0].runs[0].bold = True
-
     vals = [row.get('NO','-'), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
     for i in range(5): table.rows[1].cells[i].text = str(vals[i])
 
     doc.add_paragraph(""); ttd_table = doc.add_table(rows=1, cols=2)
     p = ttd_table.cell(0, 1).paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.add_run(f"{jabatan_ttd},\n\n\n\nDitandatangani secara elektronik\n{nama_ttd}")
-
     f_out = io.BytesIO(); doc.save(f_out); f_out.seek(0)
     return f_out
 
-# FUNGSI FULL TABLE (GABUNGAN)
 def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     JENIS_FONT = 'Arial'; UKURAN_FONT = 11
-    output = io.BytesIO()
-    doc = Document()
+    output = io.BytesIO(); doc = Document()
     style = doc.styles['Normal']; style.font.name = JENIS_FONT; style.font.size = Pt(UKURAN_FONT)
-    section = doc.sections[0]
-    section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54)
+    section = doc.sections[0]; section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54)
     section.left_margin = Cm(2.54); section.right_margin = Cm(2.54)
-
-    footer = section.footer
-    p_foot = footer.paragraphs[0]; p_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run_foot = p_foot.add_run(); 
-    fldChar1 = OxmlElement('w:fldChar'); fldChar1.set(qn('w:fldCharType'), 'begin'); run_foot._r.append(fldChar1)
-    instrText = OxmlElement('w:instrText'); instrText.set(qn('xml:space'), 'preserve'); instrText.text = "PAGE"; run_foot._r.append(instrText)
-    fldChar2 = OxmlElement('w:fldChar'); fldChar2.set(qn('w:fldCharType'), 'end'); run_foot._r.append(fldChar2)
+    p_foot = section.footer.paragraphs[0]; p_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p_foot.add_run(); run._r.append(OxmlElement('w:fldChar')); run._r[-1].set(qn('w:fldCharType'), 'begin')
+    run._r.append(OxmlElement('w:instrText')); run._r[-1].text = "PAGE"; run._r.append(OxmlElement('w:fldChar')); run._r[-1].set(qn('w:fldCharType'), 'end')
 
     col_judul = 'JUDUL_PELATIHAN' if 'JUDUL_PELATIHAN' in df.columns else df.columns[0]
-    kelompok_data = df.groupby(col_judul)
-    
-    counter_group = 0; total_group = len(kelompok_data)
-    for judul, data_grup in kelompok_data:
-        counter_group += 1
-        first_row = data_grup.iloc[0]
-        tgl_pel = first_row.get('TANGGAL_PELATIHAN', '-')
-        tempat_pel = first_row.get('TEMPAT', '-')
-
+    kelompok = df.groupby(col_judul); counter = 0
+    for judul, group in kelompok:
+        counter += 1; first = group.iloc[0]
         header_table = doc.add_table(rows=4, cols=3); header_table.autofit = False; header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
         header_table.columns[0].width = Cm(1.5); header_table.columns[1].width = Cm(0.3); header_table.columns[2].width = Cm(4.5)
         def isi_sel(r, c, text, size=9, bold=False):
@@ -166,45 +172,26 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
 
         doc.add_paragraph(""); p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.runs[0]; run.bold = True; run.font.name = JENIS_FONT; run.font.size = Pt(12) 
-        
         info_table = doc.add_table(rows=3, cols=3); info_table.autofit = False
         info_table.columns[0].width = Cm(4.0); info_table.columns[1].width = Cm(0.5); info_table.columns[2].width = Cm(11.5)
-        infos = [("Nama Pelatihan", judul), ("Tanggal", tgl_pel), ("Penyelenggara", tempat_pel)]
-        for r, (l, v) in enumerate(infos): 
-            info_table.cell(r,0).text = l; info_table.cell(r,1).text = ":"; info_table.cell(r,2).text = str(v)
+        infos = [("Nama Pelatihan", judul), ("Tanggal", first.get('TANGGAL_PELATIHAN','-')), ("Penyelenggara", first.get('TEMPAT','-'))]
+        for r, (l, v) in enumerate(infos): info_table.cell(r,0).text = l; info_table.cell(r,1).text = ":"; info_table.cell(r,2).text = str(v)
         doc.add_paragraph("")
-
         table = doc.add_table(rows=1, cols=5); table.style = 'Table Grid'; table.autofit = False
-        headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']
-        widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
-        hdr_cells = table.rows[0].cells
-        set_repeat_table_header(table.rows[0])
-        for i in range(5):
-            hdr_cells[i].width = widths[i]; hdr_cells[i].text = headers[i]
-            p = hdr_cells[i].paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = p.runs[0]; run.bold = True; run.font.name = JENIS_FONT; run.font.size = Pt(10)
+        headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']; widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
+        hdr_cells = table.rows[0].cells; set_repeat_table_header(table.rows[0])
+        for i in range(5): hdr_cells[i].width = widths[i]; hdr_cells[i].text = headers[i]; hdr_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER; hdr_cells[i].paragraphs[0].runs[0].bold = True
 
-        for idx, row in data_grup.iterrows():
+        for idx, row in group.iterrows():
             row_cells = table.add_row().cells
             vals = [row.get('NO', idx+1), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
-            for i in range(5):
-                row_cells[i].width = widths[i]; row_cells[i].text = str(vals[i])
-                row_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-                p = row_cells[i].paragraphs[0]; p.paragraph_format.space_after = Pt(2)
-                run = p.runs[0]; run.font.name = JENIS_FONT; run.font.size = Pt(10)
-                if i in [0, 2]: p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                else: p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            for i in range(5): row_cells[i].width = widths[i]; row_cells[i].text = str(vals[i]); row_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER; row_cells[i].paragraphs[0].paragraph_format.space_after = Pt(2)
         
         doc.add_paragraph(""); ttd_table = doc.add_table(rows=1, cols=2); ttd_table.autofit = False
         ttd_table.columns[0].width = Cm(9.0); ttd_table.columns[1].width = Cm(7.0)
-        cell = ttd_table.cell(0, 1); p = cell.paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER; p.paragraph_format.line_spacing = 1.0 
-        run = p.add_run(f"{jabatan_ttd},"); run.font.name = JENIS_FONT; run.font.size = Pt(11)
-        p.add_run("\n" * 6)
-        run = p.add_run("Ditandatangani secara elektronik"); run.font.name = JENIS_FONT; run.font.size = Pt(9); run.font.color.rgb = RGBColor(150, 150, 150)
-        p.add_run("\n")
-        run = p.add_run(nama_ttd); run.font.name = JENIS_FONT; run.font.size = Pt(11); run.bold = False 
-        if counter_group < total_group: doc.add_page_break()
-
+        p = ttd_table.cell(0, 1).paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER; p.paragraph_format.line_spacing = 1.0 
+        p.add_run(f"{jabatan_ttd},\n\n\n\n\nDitandatangani secara elektronik\n{nama_ttd}"); 
+        if counter < len(kelompok): doc.add_page_break()
     doc.save(output); output.seek(0)
     return output
 
@@ -220,28 +207,17 @@ def generate_zip_files(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     return zip_buffer
 
 # =============================================================================
-# 3. GUI SIDEBAR (INPUT & TEMPLATE)
+# 3. GUI & MAIN
 # =============================================================================
 with st.sidebar:
     st.header("📂 Upload Data")
-    uploaded_file = st.file_uploader("Upload Excel", type=['xlsx'], label_visibility="collapsed")
+    uploaded_file = st.file_uploader("Upload Excel", type=['xlsx'], label_visibility="collapsed", key=f"uploader_{st.session_state['uploader_key']}")
     
-    # --- POSISI BARU TOMBOL TEMPLATE (DI BAWAH UPLOAD) ---
-    df_dummy = pd.DataFrame({
-        "JUDUL_PELATIHAN": ["Diklat Teknis A", "Diklat Teknis A"],
-        "TANGGAL_PELATIHAN": ["10-12 Jan 2025", "10-12 Jan 2025"],
-        "TEMPAT": ["Pusdiklat BC", "Pusdiklat BC"],
-        "NO": [1, 2],
-        "NAMA PEGAWAI": ["Fajar Ali", "Dede Kurnia"],
-        "NIP": ["19990101...", "19950505..."],
-        "PANGKAT - GOL": ["Pengatur (II/c)", "Penata Muda (III/a)"],
-        "SATUAN KERJA": ["KPU Batam", "KPPBC Jakarta"]
-    })
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        df_dummy.to_excel(writer, index=False)
+    df_dummy = pd.DataFrame({"JUDUL_PELATIHAN": ["Diklat A"], "TANGGAL_PELATIHAN": ["Jan 2025"], "TEMPAT": ["Pusdiklat"], "NO": [1], "NAMA PEGAWAI": ["Fajar"], "NIP": ["199901012024121001"], "PANGKAT": ["II/c"], "SATUAN KERJA": ["KPU Batam"]})
+    buffer = io.BytesIO(); 
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer: df_dummy.to_excel(writer, index=False)
     buffer.seek(0)
-    st.download_button("📥 Download Template Excel", buffer, "Template_Peserta.xlsx", use_container_width=True)
+    st.download_button("📥 Download Template", buffer, "Template_Peserta.xlsx", use_container_width=True)
     
     st.markdown("---")
     st.markdown("### ✍️ Detail Nota Dinas")
@@ -249,17 +225,16 @@ with st.sidebar:
     jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
     nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
     tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
+    
+    st.markdown("---")
+    if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
 
-# =============================================================================
-# 4. GUI UTAMA (MAIN AREA)
-# =============================================================================
-st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
+st.title("Admin Diklat DJBC 🇮🇩")
 st.markdown("---")
 
 if uploaded_file:
     try:
         df_raw = pd.read_excel(uploaded_file, dtype=str)
-        # Normalisasi
         clean_cols = {}
         for col in df_raw.columns:
             upper_col = col.strip().upper().replace(" ", "_").replace("-", "_")
@@ -269,64 +244,91 @@ if uploaded_file:
             elif "KERJA" in upper_col or "SATKER" in upper_col: clean_cols[col] = "SATKER"
             elif "TEMPAT" in upper_col: clean_cols[col] = "TEMPAT"
             elif "JUDUL" in upper_col or "DIKLAT" in upper_col: clean_cols[col] = "JUDUL_PELATIHAN"
-            elif "TANGGAL" in upper_col and "PELATIHAN" in upper_col: clean_cols[col] = "TANGGAL_PELATIHAN"
+            elif "TANGGAL" in upper_col: clean_cols[col] = "TANGGAL_PELATIHAN"
             else: clean_cols[col] = upper_col 
         df_raw = df_raw.rename(columns=clean_cols).fillna("-")
         
         tab1, tab2, tab3 = st.tabs(["📝 Generator", "📊 Dashboard", "☁️ Database"])
         
         with tab1:
-            st.info("💡 Data di bawah ini bisa diedit. Jika sudah OK, tombol download siap ditekan.")
+            st.info("💡 Edit data di bawah ini. Tombol download siap ditekan.")
             df_edited = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
             ts = datetime.datetime.now().strftime("%H%M%S")
-            
-            # --- PRAKTIS: PRE-CALCULATE FILE DULU ---
-            # File dibuat di memori setiap kali ada perubahan data, agar tombol download selalu ready
             word_buffer = generate_word_combined(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
             zip_buffer = generate_zip_files(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("#### 📄 File Gabungan")
-                # ONE CLICK DOWNLOAD (Callback save database dipasang disini)
-                st.download_button(
-                    label="⚡ Download Lampiran ND (.docx)",
-                    data=word_buffer,
-                    file_name=f"Lampiran_ND_{ts}.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    type="primary",
-                    use_container_width=True,
-                    on_click=save_to_cloud_callback,
-                    args=(df_edited,)
-                )
-
-            with col2:
-                st.markdown("#### 📦 File Terpisah")
-                st.download_button(
-                    label="⚡ Download Arsip ZIP",
-                    data=zip_buffer,
-                    file_name=f"Arsip_Peserta_{ts}.zip",
-                    mime="application/zip",
-                    use_container_width=True,
-                    on_click=save_to_cloud_callback,
-                    args=(df_edited,)
-                )
+            c1, c2 = st.columns(2)
+            with c1: st.download_button("⚡ Download Lampiran ND (.docx)", word_buffer, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
+            with c2: st.download_button("⚡ Download Arsip ZIP", zip_buffer, f"Arsip_{ts}.zip", "application/zip", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
 
         with tab2:
             df_viz = df_edited
-            with st.expander("ℹ️ Cek Kolom (Debug)"): st.write(list(df_viz.columns))
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total", len(df_viz))
-            if 'SATKER' in df_viz.columns: c2.metric("Satker", df_viz['SATKER'].nunique())
-            if 'JUDUL_PELATIHAN' in df_viz.columns: c3.metric("Diklat", df_viz['JUDUL_PELATIHAN'].nunique())
+            
+            # --- AUTO DETECT (USIA & GENDER) ---
+            if 'NIP' in df_viz.columns:
+                df_viz['USIA'] = df_viz['NIP'].apply(calculate_age_from_nip)
+                df_viz['GENDER'] = df_viz['NIP'].apply(get_gender_from_nip)
+            else:
+                df_viz['USIA'] = None; df_viz['GENDER'] = "Tidak Diketahui"
+
+            # Metrics
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total Peserta", len(df_viz))
+            
+            # Metric Gender
+            pct_pria = 0
+            if 'GENDER' in df_viz.columns:
+                counts = df_viz['GENDER'].value_counts()
+                total = counts.sum()
+                if total > 0 and 'Pria' in counts: pct_pria = (counts['Pria'] / total) * 100
+            c2.metric("Proporsi Pria", f"{pct_pria:.1f}%")
+
+            # Metric Usia
+            avg_age = df_viz['USIA'].mean() if 'USIA' in df_viz.columns else 0
+            c3.metric("Rata-rata Usia", f"{avg_age:.0f} Tahun" if pd.notna(avg_age) else "-")
+            
+            c4.metric("Satker", df_viz['SATKER'].nunique() if 'SATKER' in df_viz.columns else 0)
+
             st.markdown("---")
-            cg1, cg2 = st.columns(2)
-            with cg1: 
-                if 'SATKER' in df_viz.columns: st.bar_chart(df_viz['SATKER'].value_counts().head(10))
-            with cg2:
+            
+            # --- GRAFIK BARIS 1: USIA & GENDER ---
+            col_g1, col_g2 = st.columns(2)
+            
+            with col_g1:
+                st.subheader("🎂 Distribusi Usia")
+                if 'USIA' in df_viz.columns and df_viz['USIA'].notna().any():
+                    age_counts = df_viz['USIA'].dropna().astype(int).value_counts().sort_index()
+                    st.bar_chart(age_counts, color="#3498DB")
+                else: st.warning("Data Usia tidak tersedia.")
+
+            with col_g2:
+                st.subheader("👥 Pria vs Wanita")
+                if 'GENDER' in df_viz.columns:
+                    gender_counts = df_viz['GENDER'].value_counts()
+                    # Donut Chart Logic
+                    fig, ax = plt.subplots(figsize=(5, 4))
+                    colors = ['#3498DB', '#E91E63', '#95A5A6'] # Biru, Pink, Abu
+                    labels = gender_counts.index
+                    # Pastikan urutan warna match dengan label jika bisa, tapi default cukup
+                    wedges, texts, autotexts = ax.pie(gender_counts, labels=labels, autopct='%1.1f%%', 
+                                                      startangle=90, colors=colors[:len(labels)], pctdistance=0.85)
+                    # Draw Circle for Donut
+                    centre_circle = plt.Circle((0,0),0.70,fc='white')
+                    fig.gca().add_artist(centre_circle)
+                    ax.axis('equal')  
+                    st.pyplot(fig); plt.close(fig)
+                else: st.warning("Data Gender tidak tersedia.")
+
+            # --- GRAFIK BARIS 2: SATKER & PANGKAT ---
+            st.markdown("---")
+            col_g3, col_g4 = st.columns(2)
+            with col_g3:
+                st.subheader("🏢 Top 5 Satker")
+                if 'SATKER' in df_viz.columns: st.bar_chart(df_viz['SATKER'].value_counts().head(5), color="#E67E22")
+            
+            with col_g4:
+                st.subheader("👮 Pangkat")
                 if 'PANGKAT' in df_viz.columns:
-                    pc = df_viz['PANGKAT'].value_counts()
-                    fig, ax = plt.subplots(figsize=(5,4)); ax.pie(pc, labels=pc.index, autopct='%1.1f%%'); st.pyplot(fig); plt.close(fig)
+                    st.bar_chart(df_viz['PANGKAT'].value_counts(), color="#27AE60")
 
         with tab3:
             st.subheader("🔗 Status Database")
@@ -336,8 +338,6 @@ if uploaded_file:
                 if st.button("🔄 Refresh Data"): st.dataframe(pd.DataFrame(sheet.get_all_records()))
             else: st.error("❌ Belum terhubung.")
 
-    except Exception as e:
-        st.error(f"Error: {e}")
+    except Exception as e: st.error(f"Error: {e}")
 else:
     st.info("👈 Silakan upload file Excel pada menu di sebelah kiri.")
-
