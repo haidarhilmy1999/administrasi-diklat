@@ -18,26 +18,37 @@ from oauth2client.service_account import ServiceAccountCredentials
 # =============================================================================
 # 1. KONFIGURASI & DATABASE
 # =============================================================================
-st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="⚡")
+# Update: Sidebar diset 'expanded' agar selalu terbuka di awal
+st.set_page_config(
+    page_title="Sistem Diklat DJBC Online", 
+    layout="wide", 
+    page_icon="⚡",
+    initial_sidebar_state="expanded" 
+)
 
-# --- PERBAIKAN CSS (TARGET SPESIFIK) ---
-# Kita sembunyikan item spesifik, bukan seluruh header
+# --- CSS AGRESIF (HIDE FORK & TOOLBAR) ---
 hide_st_style = """
             <style>
-            /* Sembunyikan Menu Hamburger (Titik Tiga di Kanan Atas) */
+            /* 1. Sembunyikan Menu Hamburger & Toolbar Standar */
             #MainMenu {visibility: hidden;}
+            [data-testid="stToolbar"] {display: none !important;}
+            [data-testid="stHeaderActionElements"] {display: none !important;}
             
-            /* Sembunyikan Footer 'Made with Streamlit' */
+            /* 2. Sembunyikan Footer */
             footer {visibility: hidden;}
             
-            /* Sembunyikan Tombol Deploy / Manage App */
-            .stAppDeployButton {display: none;}
-            
-            /* Sembunyikan Garis Dekorasi Warna-warni di paling atas */
+            /* 3. Sembunyikan Garis Dekorasi */
             [data-testid="stDecoration"] {display: none;}
             
-            /* Sembunyikan Badge Viewer/Fork (jika muncul) */
-            .viewerBadge_container__1QSob {display: none !important;}
+            /* 4. Sembunyikan Tombol Deploy/Fork (Viewer Badge) 
+               Kita pakai 'selector' pintar agar kena walau nama kelasnya berubah acak */
+            div[class*="viewerBadge_container"] {display: none !important;}
+            .stAppDeployButton {display: none !important;}
+            
+            /* 5. Paksa Header agar background transparan (opsional) */
+            header[data-testid="stHeader"] {
+                background: transparent;
+            }
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
@@ -234,13 +245,15 @@ with st.sidebar:
     st.markdown("### ✍️ Detail Nota Dinas")
     nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
     jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
+    
+    # --- UPDATE DEFAULT VALUE SESUAI PERMINTAAN ---
     nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
     tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
     
     st.markdown("---")
     if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
 
-st.title("Admin Diklat DJBC 🇮🇩")
+st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
 st.markdown("---")
 
 if uploaded_file:
