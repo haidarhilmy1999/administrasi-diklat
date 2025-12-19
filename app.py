@@ -20,12 +20,23 @@ from oauth2client.service_account import ServiceAccountCredentials
 # =============================================================================
 st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="⚡")
 
-# --- PERBAIKAN CSS (FIX SIDEBAR) ---
-# Saya menghapus 'header {visibility: hidden;}' agar tombol sidebar tetap muncul
+# --- PERBAIKAN CSS (TARGET SPESIFIK) ---
+# Kita sembunyikan item spesifik, bukan seluruh header
 hide_st_style = """
             <style>
+            /* Sembunyikan Menu Hamburger (Titik Tiga di Kanan Atas) */
             #MainMenu {visibility: hidden;}
+            
+            /* Sembunyikan Footer 'Made with Streamlit' */
             footer {visibility: hidden;}
+            
+            /* Sembunyikan Tombol Deploy / Manage App */
+            .stAppDeployButton {display: none;}
+            
+            /* Sembunyikan Garis Dekorasi Warna-warni di paling atas */
+            [data-testid="stDecoration"] {display: none;}
+            
+            /* Sembunyikan Badge Viewer/Fork (jika muncul) */
             .viewerBadge_container__1QSob {display: none !important;}
             </style>
             """
@@ -229,7 +240,7 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
 
-st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
+st.title("Admin Diklat DJBC 🇮🇩")
 st.markdown("---")
 
 if uploaded_file:
