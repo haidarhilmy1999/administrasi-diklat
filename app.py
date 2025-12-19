@@ -23,23 +23,20 @@ st.set_page_config(
     page_title="Sistem Diklat DJBC Online", 
     layout="wide", 
     page_icon="⚡",
-    initial_sidebar_state="collapsed" # Tutup sidebar karena kita pakai menu atas
+    initial_sidebar_state="collapsed" 
 )
 
 # --- CSS PEMBASMI LOGO (AGRESIF & AMAN) ---
-# Karena kita tidak butuh sidebar, kita bisa menyembunyikan Header secara total.
-# Ini menjamin logo Git/Fork/Deploy HILANG 100%.
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
-            header {visibility: hidden;} /* Header hilang total = Logo hilang total */
+            header {visibility: hidden;} 
             [data-testid="stToolbar"] {visibility: hidden;}
             [data-testid="stDecoration"] {display: none;}
             .stAppDeployButton {display: none !important;}
             div[class*="viewerBadge"] {display: none !important;}
             
-            /* Mengatur padding atas agar judul tidak tertutup karena header hilang */
             .block-container {
                 padding-top: 2rem;
             }
@@ -91,7 +88,7 @@ def reset_app():
     st.rerun()
 
 # =============================================================================
-# 2. FUNGSI LOGIKA
+# 2. FUNGSI LOGIKA (NIP, GENDER, WORD)
 # =============================================================================
 def calculate_age_from_nip(nip_str):
     try:
@@ -194,6 +191,18 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     doc.save(output); output.seek(0)
     return output
 
+# --- FUNGSI YANG TADI HILANG (FIXED) ---
+def generate_zip_files(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for idx, row in df.iterrows():
+            judul = row.get('JUDUL_PELATIHAN', 'Diklat')
+            nama_file = f"{str(row.get('NAMA','Peserta')).replace(' ', '_')}_{str(row.get('NIP','000'))}.docx"
+            doc_buffer = create_single_document(row, judul, row.get('TANGGAL_PELATIHAN','-'), row.get('TEMPAT','-'), nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val)
+            zip_file.writestr(nama_file, doc_buffer.getvalue())
+    zip_buffer.seek(0)
+    return zip_buffer
+
 # =============================================================================
 # 3. GUI & MAIN (TABS LAYOUT)
 # =============================================================================
@@ -202,7 +211,6 @@ st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
 st.markdown("---")
 
 # STRUKTUR NAVIGASI BARU (TOP TABS)
-# Menu setup yang tadinya di Sidebar, pindah ke Tab 1
 tab_setup, tab_gen, tab_dash, tab_db = st.tabs([
     "⚙️ Setup Data", 
     "📝 Generator", 
@@ -210,7 +218,7 @@ tab_setup, tab_gen, tab_dash, tab_db = st.tabs([
     "☁️ Database"
 ])
 
-# --- TAB 1: SETUP (PENGGANTI SIDEBAR) ---
+# --- TAB 1: SETUP ---
 with tab_setup:
     col_up, col_form = st.columns([1, 2])
     
@@ -218,7 +226,6 @@ with tab_setup:
         st.subheader("📂 1. Upload File")
         uploaded_file = st.file_uploader("Pilih Excel Peserta", type=['xlsx'], key=f"uploader_{st.session_state['uploader_key']}")
         
-        # Tombol Template
         df_dummy = pd.DataFrame({"JUDUL_PELATIHAN": ["Diklat A"], "TANGGAL_PELATIHAN": ["Jan 2025"], "TEMPAT": ["Pusdiklat"], "NO": [1], "NAMA PEGAWAI": ["Fajar"], "NIP": ["199901012024121001"], "PANGKAT": ["II/c"], "SATUAN KERJA": ["KPU Batam"]})
         buffer = io.BytesIO(); 
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer: df_dummy.to_excel(writer, index=False)
@@ -268,11 +275,9 @@ if uploaded_file:
             df_edited = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
             ts = datetime.datetime.now().strftime("%H%M%S")
             
-            # Pre-calculate
             word_buffer = generate_word_combined(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
             zip_buffer = generate_zip_files(df_edited, nama_ttd, jabatan_ttd, nomor_nd, tanggal_nd)
             
-            # Tombol Download Besar
             c_d1, c_d2 = st.columns(2)
             with c_d1: st.download_button("📄 Download Lampiran ND (.docx)", word_buffer, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
             with c_d2: st.download_button("📦 Download Arsip ZIP", zip_buffer, f"Arsip_{ts}.zip", "application/zip", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
@@ -334,6 +339,5 @@ if uploaded_file:
         st.warning("Pastikan file Excel sesuai format Template.")
 
 else:
-    # Tampilan Awal di Tab Setup jika belum upload
     with tab_gen: st.info("👈 Silakan upload file Excel di Tab 'Setup Data' terlebih dahulu.")
     with tab_dash: st.info("👈 Silakan upload file Excel di Tab 'Setup Data' terlebih dahulu.")
