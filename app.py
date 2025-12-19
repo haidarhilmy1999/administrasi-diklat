@@ -10,6 +10,7 @@ from docx.oxml.ns import qn
 import io
 import datetime
 import zipfile
+import time
 
 # --- LIBRARY GOOGLE SHEETS ---
 import gspread
@@ -18,7 +19,6 @@ from oauth2client.service_account import ServiceAccountCredentials
 # =============================================================================
 # 1. KONFIGURASI & DATABASE
 # =============================================================================
-# Update: Sidebar diset 'expanded' agar selalu terbuka di awal
 st.set_page_config(
     page_title="Sistem Diklat DJBC Online", 
     layout="wide", 
@@ -26,28 +26,22 @@ st.set_page_config(
     initial_sidebar_state="expanded" 
 )
 
-# --- CSS AGRESIF (HIDE FORK & TOOLBAR) ---
+# --- CSS KHUSUS (SOLUSI TOMBOL SIDEBAR) ---
 hide_st_style = """
             <style>
-            /* 1. Sembunyikan Menu Hamburger & Toolbar Standar */
-            #MainMenu {visibility: hidden;}
-            [data-testid="stToolbar"] {display: none !important;}
-            [data-testid="stHeaderActionElements"] {display: none !important;}
-            
-            /* 2. Sembunyikan Footer */
-            footer {visibility: hidden;}
-            
-            /* 3. Sembunyikan Garis Dekorasi */
+            /* 1. Sembunyikan elemen pengganggu (Fork & Deploy) */
+            .viewerBadge_container__1QSob {display: none !important;}
+            .stAppDeployButton {display: none !important;}
             [data-testid="stDecoration"] {display: none;}
             
-            /* 4. Sembunyikan Tombol Deploy/Fork (Viewer Badge) 
-               Kita pakai 'selector' pintar agar kena walau nama kelasnya berubah acak */
-            div[class*="viewerBadge_container"] {display: none !important;}
-            .stAppDeployButton {display: none !important;}
+            /* 2. Sembunyikan Header & Toolbar (Menu Kanan Atas) */
+            header {visibility: hidden;}
+            [data-testid="stToolbar"] {visibility: hidden;}
             
-            /* 5. Paksa Header agar background transparan (opsional) */
-            header[data-testid="stHeader"] {
-                background: transparent;
+            /* 3. TAPI... Munculkan kembali tombol Sidebar (Override) */
+            [data-testid="stSidebarCollapsedControl"] {
+                visibility: visible !important;
+                display: block !important;
             }
             </style>
             """
@@ -97,14 +91,13 @@ def reset_app():
     st.rerun()
 
 # =============================================================================
-# 2. FUNGSI LOGIKA (NIP INTELLIGENCE)
+# 2. FUNGSI LOGIKA
 # =============================================================================
 
-# --- HITUNG USIA ---
 def calculate_age_from_nip(nip_str):
     try:
         clean_nip = str(nip_str).replace(" ", "").replace(".", "").replace("-", "")
-        year_str = clean_nip[:4] # 4 Digit pertama = Tahun Lahir
+        year_str = clean_nip[:4]
         if year_str.isdigit():
             birth_year = int(year_str)
             current_year = datetime.datetime.now().year
@@ -113,18 +106,16 @@ def calculate_age_from_nip(nip_str):
         return None
     except: return None
 
-# --- CEK GENDER ---
 def get_gender_from_nip(nip_str):
     try:
         clean_nip = str(nip_str).replace(" ", "").replace(".", "").replace("-", "")
         if len(clean_nip) >= 15:
-            code = clean_nip[14] # Digit ke-15
+            code = clean_nip[14]
             if code == '1': return "Pria"
             elif code == '2': return "Wanita"
         return "Tidak Diketahui"
     except: return "Tidak Diketahui"
 
-# --- WORD GENERATOR ---
 def set_repeat_table_header(row):
     tr = row._tr; trPr = tr.get_or_add_trPr()
     tblHeader = OxmlElement('w:tblHeader'); tblHeader.set(qn('w:val'), "true"); trPr.append(tblHeader)
@@ -134,7 +125,6 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     doc = Document(); style = doc.styles['Normal']; style.font.name = JENIS_FONT; style.font.size = Pt(UKURAN_FONT)
     section = doc.sections[0]; section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54)
     section.left_margin = Cm(2.54); section.right_margin = Cm(2.54)
-
     header_table = doc.add_table(rows=4, cols=3); header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
     header_table.columns[0].width = Cm(1.5); header_table.columns[2].width = Cm(4.5)
     def isi_sel(r, c, text, size=9, bold=False):
@@ -142,16 +132,16 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
         run = p.add_run(text); run.font.name = JENIS_FONT; run.font.size = Pt(size); run.bold = bold
     isi_sel(0, 0, "LAMPIRAN II", 11); header_table.cell(0, 2).merge(header_table.cell(0, 0)); header_table.cell(0,0).text="LAMPIRAN II"
     isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); header_table.cell(1, 2).merge(header_table.cell(1, 0)); header_table.cell(1,0).text=f"Nota Dinas {jabatan_ttd}"
+    
+    # FORMAT BARU: Langsung pakai nilai string yang diinput user
     isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val))
     isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val))
 
     doc.add_paragraph(""); p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = p.runs[0]; run.bold = True; run.font.name = JENIS_FONT; run.font.size = Pt(12) 
-    
     info_table = doc.add_table(rows=3, cols=3); 
     infos = [("Nama Pelatihan", judul), ("Tanggal", tgl_pel), ("Penyelenggara", tempat_pel)]
     for r, (l, v) in enumerate(infos): info_table.cell(r,0).text = l; info_table.cell(r,1).text = ":"; info_table.cell(r,2).text = v
-
     doc.add_paragraph(""); table = doc.add_table(rows=2, cols=5); table.style = 'Table Grid'
     headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']
     widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
@@ -160,7 +150,6 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
         table.rows[0].cells[i].paragraphs[0].runs[0].bold = True
     vals = [row.get('NO','-'), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
     for i in range(5): table.rows[1].cells[i].text = str(vals[i])
-
     doc.add_paragraph(""); ttd_table = doc.add_table(rows=1, cols=2)
     p = ttd_table.cell(0, 1).paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.add_run(f"{jabatan_ttd},\n\n\n\nDitandatangani secara elektronik\n{nama_ttd}")
@@ -189,6 +178,8 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
             return cell
         c = isi_sel(0, 0, "LAMPIRAN II", 11); c.merge(header_table.cell(0, 2))
         c = isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); c.merge(header_table.cell(1, 2))
+        
+        # FORMAT BARU:
         isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val))
         isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val))
 
@@ -203,12 +194,10 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
         headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']; widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
         hdr_cells = table.rows[0].cells; set_repeat_table_header(table.rows[0])
         for i in range(5): hdr_cells[i].width = widths[i]; hdr_cells[i].text = headers[i]; hdr_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER; hdr_cells[i].paragraphs[0].runs[0].bold = True
-
         for idx, row in group.iterrows():
             row_cells = table.add_row().cells
             vals = [row.get('NO', idx+1), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
             for i in range(5): row_cells[i].width = widths[i]; row_cells[i].text = str(vals[i]); row_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER; row_cells[i].paragraphs[0].paragraph_format.space_after = Pt(2)
-        
         doc.add_paragraph(""); ttd_table = doc.add_table(rows=1, cols=2); ttd_table.autofit = False
         ttd_table.columns[0].width = Cm(9.0); ttd_table.columns[1].width = Cm(7.0)
         p = ttd_table.cell(0, 1).paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER; p.paragraph_format.line_spacing = 1.0 
@@ -246,12 +235,24 @@ with st.sidebar:
     nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
     jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
     
-    # --- UPDATE DEFAULT VALUE SESUAI PERMINTAAN ---
+    # --- UPDATE: KOREKSI INPUT SESUAI REQUEST ---
     nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
     tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
     
     st.markdown("---")
     if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
+
+# TOMBOL BACKUP (Jika Sidebar tertutup dan panah tidak muncul)
+if st.button("👁️ Buka Sidebar (Backup)", type="secondary"):
+    st.markdown(
+        """<script>
+        var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+        if (sidebar) { sidebar.style.display = 'block'; }
+        </script>""", 
+        unsafe_allow_html=True
+    )
+    # Trik: Kadang script JS susah jalan di Streamlit cloud, jadi kita kasih info text saja
+    st.caption("Jika sidebar hilang, coba refresh halaman (F5).")
 
 st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
 st.markdown("---")
@@ -279,7 +280,6 @@ if uploaded_file:
         else:
             df_raw['USIA'] = None; df_raw['GENDER'] = "Tidak Diketahui"
 
-        # KEMBALI KE 3 TABS UTAMA (STABIL)
         tab1, tab2, tab3 = st.tabs(["📝 Generator", "📊 Dashboard", "☁️ Database"])
         
         with tab1:
