@@ -28,7 +28,7 @@ st.set_page_config(
     page_title="Sistem Diklat DJBC Online", 
     layout="wide", 
     page_icon="⚡",
-    initial_sidebar_state=st.session_state.sidebar_state # Baca status dari memory
+    initial_sidebar_state=st.session_state.sidebar_state 
 )
 
 # --- CSS AGRESIF (TAPI TETAP MENAMPILKAN KONTROL SIDEBAR) ---
@@ -49,7 +49,7 @@ hide_st_style = """
                 display: block !important;
                 top: 0px !important; 
                 left: 0px !important;
-                z-index: 999999 !important; /* Pastikan dia di atas segalanya */
+                z-index: 999999 !important;
             }
             </style>
             """
@@ -246,9 +246,11 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
 
-# TOMBOL BACKUP (FUNGSIONAL)
-if st.sidebar.get("sidebar_state") != "expanded": # Tampilkan hanya jika perlu
-    if st.button("👁️ Buka Sidebar (Backup)", type="secondary"):
+# TOMBOL BACKUP - Fixed Logic
+# Tombol ini selalu muncul untuk antisipasi jika tombol panah hilang
+# Menggunakan st.expander agar tidak memenuhi layar utama jika tidak dibutuhkan
+with st.expander("🛠️ Menu Darurat (Jika Sidebar Hilang)"):
+    if st.button("👁️ Buka Sidebar Paksa"):
         st.session_state.sidebar_state = 'expanded'
         st.rerun()
 
