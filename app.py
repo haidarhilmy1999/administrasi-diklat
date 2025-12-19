@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns # Library baru untuk Heatmap
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -19,7 +18,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 # =============================================================================
 # 1. KONFIGURASI & DATABASE
 # =============================================================================
-st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="⚡")
 
 hide_st_style = """
             <style>
@@ -75,31 +74,34 @@ def reset_app():
     st.rerun()
 
 # =============================================================================
-# 2. FUNGSI LOGIKA (NIP & ANALYTICS)
+# 2. FUNGSI LOGIKA (NIP INTELLIGENCE)
 # =============================================================================
 
+# --- HITUNG USIA ---
 def calculate_age_from_nip(nip_str):
     try:
         clean_nip = str(nip_str).replace(" ", "").replace(".", "").replace("-", "")
-        year_str = clean_nip[:4]
+        year_str = clean_nip[:4] # 4 Digit pertama = Tahun Lahir
         if year_str.isdigit():
             birth_year = int(year_str)
             current_year = datetime.datetime.now().year
-            if 1950 <= birth_year <= current_year: return current_year - birth_year
+            if 1950 <= birth_year <= current_year:
+                return current_year - birth_year
         return None
     except: return None
 
+# --- CEK GENDER ---
 def get_gender_from_nip(nip_str):
     try:
         clean_nip = str(nip_str).replace(" ", "").replace(".", "").replace("-", "")
         if len(clean_nip) >= 15:
-            code = clean_nip[14]
+            code = clean_nip[14] # Digit ke-15
             if code == '1': return "Pria"
             elif code == '2': return "Wanita"
         return "Tidak Diketahui"
     except: return "Tidak Diketahui"
 
-# --- WORD GENERATOR UTILS ---
+# --- WORD GENERATOR ---
 def set_repeat_table_header(row):
     tr = row._tr; trPr = tr.get_or_add_trPr()
     tblHeader = OxmlElement('w:tblHeader'); tblHeader.set(qn('w:val'), "true"); trPr.append(tblHeader)
@@ -109,7 +111,7 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     doc = Document(); style = doc.styles['Normal']; style.font.name = JENIS_FONT; style.font.size = Pt(UKURAN_FONT)
     section = doc.sections[0]; section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54)
     section.left_margin = Cm(2.54); section.right_margin = Cm(2.54)
-    
+
     header_table = doc.add_table(rows=4, cols=3); header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
     header_table.columns[0].width = Cm(1.5); header_table.columns[2].width = Cm(4.5)
     def isi_sel(r, c, text, size=9, bold=False):
@@ -226,7 +228,7 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
 
-st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
+st.title("Admin Diklat DJBC 🇮🇩")
 st.markdown("---")
 
 if uploaded_file:
@@ -245,15 +247,7 @@ if uploaded_file:
             else: clean_cols[col] = upper_col 
         df_raw = df_raw.rename(columns=clean_cols).fillna("-")
         
-        # PROSES DATA ANALITIK
-        if 'NIP' in df_raw.columns:
-            df_raw['USIA'] = df_raw['NIP'].apply(calculate_age_from_nip)
-            df_raw['GENDER'] = df_raw['NIP'].apply(get_gender_from_nip)
-        else:
-            df_raw['USIA'] = None; df_raw['GENDER'] = "Tidak Diketahui"
-
-        # TABS BARU
-        tab1, tab2, tab3, tab4 = st.tabs(["📝 Generator", "📊 Dashboard", "📈 Analisis Mendalam", "☁️ Database"])
+        tab1, tab2, tab3 = st.tabs(["📝 Generator", "📊 Dashboard", "☁️ Database"])
         
         with tab1:
             st.info("💡 Edit data di bawah ini. Tombol download siap ditekan.")
@@ -265,94 +259,75 @@ if uploaded_file:
             with c1: st.download_button("⚡ Download Lampiran ND (.docx)", word_buffer, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
             with c2: st.download_button("⚡ Download Arsip ZIP", zip_buffer, f"Arsip_{ts}.zip", "application/zip", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
 
-        with tab2: # DASHBOARD SUMMARY
+        with tab2:
             df_viz = df_edited
+            
+            # --- AUTO DETECT (USIA & GENDER) ---
+            if 'NIP' in df_viz.columns:
+                df_viz['USIA'] = df_viz['NIP'].apply(calculate_age_from_nip)
+                df_viz['GENDER'] = df_viz['NIP'].apply(get_gender_from_nip)
+            else:
+                df_viz['USIA'] = None; df_viz['GENDER'] = "Tidak Diketahui"
+
+            # Metrics
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Total Peserta", len(df_viz))
+            
+            # UPDATE: METRIK "JUMLAH PELATIHAN"
             jml_pelatihan = df_viz['JUDUL_PELATIHAN'].nunique() if 'JUDUL_PELATIHAN' in df_viz.columns else 0
             c2.metric("Jumlah Pelatihan", jml_pelatihan)
+
+            # Metric Usia
             avg_age = df_viz['USIA'].mean() if 'USIA' in df_viz.columns else 0
             c3.metric("Rata-rata Usia", f"{avg_age:.0f} Tahun" if pd.notna(avg_age) else "-")
+            
             c4.metric("Satker", df_viz['SATKER'].nunique() if 'SATKER' in df_viz.columns else 0)
 
             st.markdown("---")
+            
+            # --- GRAFIK BARIS 1 ---
             col_g1, col_g2 = st.columns(2)
+            
             with col_g1:
                 st.subheader("🎂 Distribusi Usia")
                 if 'USIA' in df_viz.columns and df_viz['USIA'].notna().any():
                     age_counts = df_viz['USIA'].dropna().astype(int).value_counts().sort_index()
                     st.bar_chart(age_counts, color="#3498DB")
                 else: st.warning("Data Usia tidak tersedia.")
+
             with col_g2:
                 st.subheader("👥 Pria vs Wanita")
                 if 'GENDER' in df_viz.columns:
                     gender_counts = df_viz['GENDER'].value_counts()
                     fig, ax = plt.subplots(figsize=(5, 4))
-                    colors = ['#3498DB', '#E91E63', '#95A5A6']
-                    ax.pie(gender_counts, labels=gender_counts.index, autopct='%1.1f%%', startangle=90, colors=colors[:len(gender_counts)])
-                    centre_circle = plt.Circle((0,0),0.70,fc='white'); fig.gca().add_artist(centre_circle); ax.axis('equal')  
+                    colors = ['#3498DB', '#E91E63', '#95A5A6'] # Biru, Pink, Abu
+                    wedges, texts, autotexts = ax.pie(gender_counts, labels=gender_counts.index, autopct='%1.1f%%', 
+                                                      startangle=90, colors=colors[:len(gender_counts)], pctdistance=0.85)
+                    centre_circle = plt.Circle((0,0),0.70,fc='white')
+                    fig.gca().add_artist(centre_circle)
+                    ax.axis('equal')  
                     st.pyplot(fig); plt.close(fig)
                 else: st.warning("Data Gender tidak tersedia.")
+
+            # --- GRAFIK BARIS 2 ---
             st.markdown("---")
             col_g3, col_g4 = st.columns(2)
             with col_g3:
                 st.subheader("🏢 Top 5 Satker")
                 if 'SATKER' in df_viz.columns: st.bar_chart(df_viz['SATKER'].value_counts().head(5), color="#E67E22")
+            
             with col_g4:
+                # UPDATE: PANGKAT JADI PIE CHART
                 st.subheader("👮 Komposisi Pangkat")
                 if 'PANGKAT' in df_viz.columns:
                     pangkat_counts = df_viz['PANGKAT'].value_counts()
                     fig2, ax2 = plt.subplots(figsize=(5,4))
                     ax2.pie(pangkat_counts, labels=pangkat_counts.index, autopct='%1.1f%%', startangle=90)
                     st.pyplot(fig2); plt.close(fig2)
-                else: st.warning("Data Pangkat tidak tersedia.")
+                else:
+                    st.warning("Data Pangkat tidak tersedia.")
 
-        with tab3: # TAB ANALISIS MENDALAM (BARU)
-            st.subheader("📈 Analisis Data Lanjutan")
-            st.info("Fitur ini membantu Anda melihat pola data lebih dalam (Ekonomi & Statistik).")
-            
-            # 1. CROSS TABULATION (PIVOT)
-            st.markdown("#### 1. Cross-Tabulation (Pivot Table)")
-            c_p1, c_p2 = st.columns(2)
-            with c_p1: col_row = st.selectbox("Baris (Row)", options=df_edited.columns, index=list(df_edited.columns).index('SATKER') if 'SATKER' in df_edited.columns else 0)
-            with c_p2: col_col = st.selectbox("Kolom (Column)", options=df_edited.columns, index=list(df_edited.columns).index('PANGKAT') if 'PANGKAT' in df_edited.columns else 0)
-            
-            try:
-                pivot_table = pd.crosstab(df_edited[col_row], df_edited[col_col])
-                st.dataframe(pivot_table, use_container_width=True)
-                
-                # Heatmap Visualization
-                if not pivot_table.empty:
-                    fig_heat, ax_heat = plt.subplots(figsize=(10, 6))
-                    sns.heatmap(pivot_table, annot=True, fmt="d", cmap="YlGnBu", ax=ax_heat)
-                    st.pyplot(fig_heat); plt.close(fig_heat)
-            except Exception as e: st.warning(f"Gagal membuat pivot: {e}")
-            
-            st.markdown("---")
-            
-            # 2. PARETO ANALYSIS
-            st.markdown("#### 2. Analisis Pareto (Hukum 80/20)")
-            pareto_col = st.selectbox("Pilih Kategori untuk Analisis Pareto:", ['SATKER', 'DIKLAT', 'PANGKAT'], index=0)
-            col_target = pareto_col if pareto_col in df_edited.columns else 'SATKER'
-            
-            if col_target in df_edited.columns:
-                pareto_data = df_edited[col_target].value_counts().to_frame(name='Count')
-                pareto_data['Cumulative Percentage'] = pareto_data['Count'].cumsum() / pareto_data['Count'].sum() * 100
-                
-                col_par1, col_par2 = st.columns([2, 1])
-                with col_par1:
-                    fig_par, ax_par = plt.subplots()
-                    ax_par.bar(pareto_data.index[:10], pareto_data['Count'][:10], color='C0')
-                    ax_par2 = ax_par.twinx()
-                    ax_par2.plot(pareto_data.index[:10], pareto_data['Cumulative Percentage'][:10], color='C1', marker='D', ms=5)
-                    ax_par2.axhline(80, color="k", linestyle="--", linewidth=1)
-                    ax_par.set_xticklabels(pareto_data.index[:10], rotation=45, ha='right')
-                    st.pyplot(fig_par); plt.close(fig_par)
-                with col_par2:
-                    st.write(pareto_data.head(10))
-                    st.caption("Grafik menunjukkan kontribusi kumulatif. Garis putus-putus adalah batas 80%.")
-
-        with tab4: # DATABASE
+        with tab3:
             st.subheader("🔗 Status Database")
             sheet = connect_to_gsheet()
             if sheet:
