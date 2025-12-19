@@ -20,11 +20,12 @@ from oauth2client.service_account import ServiceAccountCredentials
 # =============================================================================
 st.set_page_config(page_title="Sistem Diklat DJBC Online", layout="wide", page_icon="⚡")
 
+# --- PERBAIKAN CSS (FIX SIDEBAR) ---
+# Saya menghapus 'header {visibility: hidden;}' agar tombol sidebar tetap muncul
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
-            header {visibility: hidden;}
             .viewerBadge_container__1QSob {display: none !important;}
             </style>
             """
@@ -228,7 +229,7 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
 
-st.title("Admin Diklat DJBC 🇮🇩")
+st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
 st.markdown("---")
 
 if uploaded_file:
@@ -247,6 +248,14 @@ if uploaded_file:
             else: clean_cols[col] = upper_col 
         df_raw = df_raw.rename(columns=clean_cols).fillna("-")
         
+        # PROSES DATA ANALITIK
+        if 'NIP' in df_raw.columns:
+            df_raw['USIA'] = df_raw['NIP'].apply(calculate_age_from_nip)
+            df_raw['GENDER'] = df_raw['NIP'].apply(get_gender_from_nip)
+        else:
+            df_raw['USIA'] = None; df_raw['GENDER'] = "Tidak Diketahui"
+
+        # KEMBALI KE 3 TABS UTAMA (STABIL)
         tab1, tab2, tab3 = st.tabs(["📝 Generator", "📊 Dashboard", "☁️ Database"])
         
         with tab1:
@@ -259,75 +268,49 @@ if uploaded_file:
             with c1: st.download_button("⚡ Download Lampiran ND (.docx)", word_buffer, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
             with c2: st.download_button("⚡ Download Arsip ZIP", zip_buffer, f"Arsip_{ts}.zip", "application/zip", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
 
-        with tab2:
+        with tab2: # DASHBOARD
             df_viz = df_edited
-            
-            # --- AUTO DETECT (USIA & GENDER) ---
-            if 'NIP' in df_viz.columns:
-                df_viz['USIA'] = df_viz['NIP'].apply(calculate_age_from_nip)
-                df_viz['GENDER'] = df_viz['NIP'].apply(get_gender_from_nip)
-            else:
-                df_viz['USIA'] = None; df_viz['GENDER'] = "Tidak Diketahui"
-
-            # Metrics
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Total Peserta", len(df_viz))
-            
-            # UPDATE: METRIK "JUMLAH PELATIHAN"
             jml_pelatihan = df_viz['JUDUL_PELATIHAN'].nunique() if 'JUDUL_PELATIHAN' in df_viz.columns else 0
             c2.metric("Jumlah Pelatihan", jml_pelatihan)
-
-            # Metric Usia
             avg_age = df_viz['USIA'].mean() if 'USIA' in df_viz.columns else 0
             c3.metric("Rata-rata Usia", f"{avg_age:.0f} Tahun" if pd.notna(avg_age) else "-")
-            
             c4.metric("Satker", df_viz['SATKER'].nunique() if 'SATKER' in df_viz.columns else 0)
 
             st.markdown("---")
-            
-            # --- GRAFIK BARIS 1 ---
             col_g1, col_g2 = st.columns(2)
-            
             with col_g1:
                 st.subheader("🎂 Distribusi Usia")
                 if 'USIA' in df_viz.columns and df_viz['USIA'].notna().any():
                     age_counts = df_viz['USIA'].dropna().astype(int).value_counts().sort_index()
                     st.bar_chart(age_counts, color="#3498DB")
                 else: st.warning("Data Usia tidak tersedia.")
-
             with col_g2:
                 st.subheader("👥 Pria vs Wanita")
                 if 'GENDER' in df_viz.columns:
                     gender_counts = df_viz['GENDER'].value_counts()
                     fig, ax = plt.subplots(figsize=(5, 4))
-                    colors = ['#3498DB', '#E91E63', '#95A5A6'] # Biru, Pink, Abu
-                    wedges, texts, autotexts = ax.pie(gender_counts, labels=gender_counts.index, autopct='%1.1f%%', 
-                                                      startangle=90, colors=colors[:len(gender_counts)], pctdistance=0.85)
-                    centre_circle = plt.Circle((0,0),0.70,fc='white')
-                    fig.gca().add_artist(centre_circle)
-                    ax.axis('equal')  
+                    colors = ['#3498DB', '#E91E63', '#95A5A6']
+                    ax.pie(gender_counts, labels=gender_counts.index, autopct='%1.1f%%', startangle=90, colors=colors[:len(gender_counts)])
+                    centre_circle = plt.Circle((0,0),0.70,fc='white'); fig.gca().add_artist(centre_circle); ax.axis('equal')  
                     st.pyplot(fig); plt.close(fig)
                 else: st.warning("Data Gender tidak tersedia.")
-
-            # --- GRAFIK BARIS 2 ---
             st.markdown("---")
             col_g3, col_g4 = st.columns(2)
             with col_g3:
                 st.subheader("🏢 Top 5 Satker")
                 if 'SATKER' in df_viz.columns: st.bar_chart(df_viz['SATKER'].value_counts().head(5), color="#E67E22")
-            
             with col_g4:
-                # UPDATE: PANGKAT JADI PIE CHART
                 st.subheader("👮 Komposisi Pangkat")
                 if 'PANGKAT' in df_viz.columns:
                     pangkat_counts = df_viz['PANGKAT'].value_counts()
                     fig2, ax2 = plt.subplots(figsize=(5,4))
                     ax2.pie(pangkat_counts, labels=pangkat_counts.index, autopct='%1.1f%%', startangle=90)
                     st.pyplot(fig2); plt.close(fig2)
-                else:
-                    st.warning("Data Pangkat tidak tersedia.")
+                else: st.warning("Data Pangkat tidak tersedia.")
 
-        with tab3:
+        with tab3: # DATABASE
             st.subheader("🔗 Status Database")
             sheet = connect_to_gsheet()
             if sheet:
