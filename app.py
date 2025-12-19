@@ -17,16 +17,21 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 # =============================================================================
-# 1. KONFIGURASI & DATABASE
+# 1. KONFIGURASI HALAMAN & STATE SIDEBAR
 # =============================================================================
+
+# Inisialisasi State Sidebar sebelum halaman dimuat
+if 'sidebar_state' not in st.session_state:
+    st.session_state.sidebar_state = 'expanded'
+
 st.set_page_config(
     page_title="Sistem Diklat DJBC Online", 
     layout="wide", 
     page_icon="⚡",
-    initial_sidebar_state="expanded" 
+    initial_sidebar_state=st.session_state.sidebar_state # Baca status dari memory
 )
 
-# --- CSS KHUSUS (SOLUSI TOMBOL SIDEBAR) ---
+# --- CSS AGRESIF (TAPI TETAP MENAMPILKAN KONTROL SIDEBAR) ---
 hide_st_style = """
             <style>
             /* 1. Sembunyikan elemen pengganggu (Fork & Deploy) */
@@ -34,14 +39,17 @@ hide_st_style = """
             .stAppDeployButton {display: none !important;}
             [data-testid="stDecoration"] {display: none;}
             
-            /* 2. Sembunyikan Header & Toolbar (Menu Kanan Atas) */
+            /* 2. Sembunyikan Header & Toolbar */
             header {visibility: hidden;}
             [data-testid="stToolbar"] {visibility: hidden;}
             
-            /* 3. TAPI... Munculkan kembali tombol Sidebar (Override) */
+            /* 3. PAKSA TOMBOL PANAH SIDEBAR MUNCUL (PENTING) */
             [data-testid="stSidebarCollapsedControl"] {
                 visibility: visible !important;
                 display: block !important;
+                top: 0px !important; 
+                left: 0px !important;
+                z-index: 999999 !important; /* Pastikan dia di atas segalanya */
             }
             </style>
             """
@@ -133,7 +141,6 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     isi_sel(0, 0, "LAMPIRAN II", 11); header_table.cell(0, 2).merge(header_table.cell(0, 0)); header_table.cell(0,0).text="LAMPIRAN II"
     isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); header_table.cell(1, 2).merge(header_table.cell(1, 0)); header_table.cell(1,0).text=f"Nota Dinas {jabatan_ttd}"
     
-    # FORMAT BARU: Langsung pakai nilai string yang diinput user
     isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val))
     isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val))
 
@@ -178,8 +185,6 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
             return cell
         c = isi_sel(0, 0, "LAMPIRAN II", 11); c.merge(header_table.cell(0, 2))
         c = isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); c.merge(header_table.cell(1, 2))
-        
-        # FORMAT BARU:
         isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val))
         isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val))
 
@@ -235,24 +240,17 @@ with st.sidebar:
     nama_ttd = st.text_input("Nama Pejabat", "Ayu Sukorini")
     jabatan_ttd = st.text_input("Jabatan", "Sekretaris Direktorat Jenderal")
     
-    # --- UPDATE: KOREKSI INPUT SESUAI REQUEST ---
     nomor_nd = st.text_input("Nomor ND", "[@NomorND]")
     tanggal_nd = st.text_input("Tanggal ND", "[@TanggalND]")
     
     st.markdown("---")
     if st.button("🔄 Reset / Hapus Data", type="primary", use_container_width=True): reset_app()
 
-# TOMBOL BACKUP (Jika Sidebar tertutup dan panah tidak muncul)
-if st.button("👁️ Buka Sidebar (Backup)", type="secondary"):
-    st.markdown(
-        """<script>
-        var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-        if (sidebar) { sidebar.style.display = 'block'; }
-        </script>""", 
-        unsafe_allow_html=True
-    )
-    # Trik: Kadang script JS susah jalan di Streamlit cloud, jadi kita kasih info text saja
-    st.caption("Jika sidebar hilang, coba refresh halaman (F5).")
+# TOMBOL BACKUP (FUNGSIONAL)
+if st.sidebar.get("sidebar_state") != "expanded": # Tampilkan hanya jika perlu
+    if st.button("👁️ Buka Sidebar (Backup)", type="secondary"):
+        st.session_state.sidebar_state = 'expanded'
+        st.rerun()
 
 st.title("Sistem Administrasi Diklat DJBC 🇮🇩")
 st.markdown("---")
