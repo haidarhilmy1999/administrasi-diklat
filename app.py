@@ -296,7 +296,7 @@ with tab_main:
             st.warning("Pastikan Anda menggunakan Template Excel yang benar.")
     else:
         # Pesan Kosong yang estetik
-        st.info("👈 Silakan upload file Excel pada panel di atas untuk memulai.")
+        st.info("☝️ Silakan upload file Excel pada panel di atas untuk memulai.")
 
 # --- TAB 2: DASHBOARD (VISUALISASI) ---
 with tab_dash:
@@ -352,4 +352,5 @@ with tab_db:
         st.success(f"✅ Terhubung ke: {NAMA_GOOGLE_SHEET}")
         if st.button("🔄 Refresh Data"): st.dataframe(pd.DataFrame(sheet.get_all_records()))
     else: st.error("❌ Belum terhubung.")
+
 
