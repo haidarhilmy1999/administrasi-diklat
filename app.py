@@ -62,9 +62,10 @@ def connect_to_gsheet():
     except: return None
 
 # =============================================================================
-# 2. LOGIKA KALENDER (DB UPDATE)
+# 2. LOGIKA KALENDER & DATABASE
 # =============================================================================
 
+# Format Tanggal (Gabung Mulai & Selesai)
 def format_date_range(row):
     try:
         tgl_mulai = row['TANGGAL_MULAI']
@@ -75,6 +76,7 @@ def format_date_range(row):
         return str_mulai if str_mulai == str_selesai else f"{str_mulai} s.d. {str_selesai}"
     except: return "-"
 
+# Update Database (Setup Kalender)
 def update_calendar_db(df_new):
     sh = connect_to_gsheet()
     if sh:
@@ -83,21 +85,16 @@ def update_calendar_db(df_new):
             existing_data = ws.get_all_records()
             df_old = pd.DataFrame(existing_data)
             
-            # Validasi Kolom (Wajib ada LOKASI sekarang)
-            required = ['TANGGAL_MULAI', 'TANGGAL_SELESAI', 'LOKASI', 'JUDUL_PELATIHAN']
-            if not all(col in df_new.columns for col in required):
-                st.error(f"Excel harus punya kolom: {', '.join(required)}")
+            if 'TANGGAL_MULAI' in df_new.columns and 'TANGGAL_SELESAI' in df_new.columns:
+                df_new['RENCANA_TANGGAL'] = df_new.apply(format_date_range, axis=1)
+            elif 'RENCANA_TANGGAL' not in df_new.columns:
+                st.error("Excel harus punya kolom 'TANGGAL_MULAI' dan 'TANGGAL_SELESAI'")
                 return False
 
-            # Format Tanggal
-            df_new['RENCANA_TANGGAL'] = df_new.apply(format_date_range, axis=1)
-            
             df_new = df_new.astype(str)
             if not df_old.empty: df_old = df_old.astype(str)
 
             final_rows = []
-            
-            # Auto ID Logic
             last_id = 0
             if not df_old.empty and 'ID' in df_old.columns:
                 try:
@@ -112,45 +109,42 @@ def update_calendar_db(df_new):
                 match_old = df_old[df_old['JUDUL_PELATIHAN'] == judul] if not df_old.empty else pd.DataFrame()
                 
                 if not match_old.empty:
-                    # Update (Keep Status & Realisasi)
                     row_lama = match_old.iloc[0]
                     final_rows.append([
                         row_lama['ID'], 
                         judul, 
                         row_new['RENCANA_TANGGAL'],
-                        row_new['LOKASI'], # Update Lokasi dari Excel Baru
+                        row_new['LOKASI'], 
                         row_lama['STATUS'], 
                         row_lama['REALISASI']
                     ])
                 else:
-                    # Insert Baru
                     last_id += 1
                     final_rows.append([
                         last_id, 
                         judul, 
                         row_new['RENCANA_TANGGAL'],
-                        row_new['LOKASI'], # Insert Lokasi
+                        row_new['LOKASI'], 
                         "Pending", 
                         "-"
                     ])
             
-            # Keep Old Data
             if not df_old.empty:
                 sisa_lama = df_old[~df_old['JUDUL_PELATIHAN'].isin(processed_titles)]
                 for _, row_old in sisa_lama.iterrows():
                     final_rows.append(row_old.tolist())
 
             ws.clear()
-            # UPDATE HEADER G-SHEET
             ws.append_row(['ID', 'JUDUL_PELATIHAN', 'RENCANA_TANGGAL', 'LOKASI', 'STATUS', 'REALISASI'])
             ws.append_rows(final_rows)
-            st.toast("✅ Kalender (termasuk Lokasi) berhasil di-update!", icon="📅")
+            st.toast("✅ Kalender berhasil di-update!", icon="📅")
             return True
         except Exception as e:
             st.error(f"Gagal update kalender: {e}")
             return False
     return False
 
+# Tandai Selesai (Berdasarkan Nama Pelatihan dari Excel Peserta)
 def mark_training_complete(judul_pelatihan):
     sh = connect_to_gsheet()
     if sh:
@@ -158,17 +152,21 @@ def mark_training_complete(judul_pelatihan):
             ws = sh.worksheet(SHEET_KALENDER)
             data = ws.get_all_records()
             df = pd.DataFrame(data)
+            
+            # Cari judul yang sama persis
             row_idx = df.index[df['JUDUL_PELATIHAN'] == judul_pelatihan].tolist()
+            
             if row_idx:
                 idx_gsheet = row_idx[0] + 2 
                 current_time = datetime.datetime.now().strftime("%d-%m-%Y")
-                # Kolom STATUS ada di index 5 (E), REALISASI di 6 (F) karena ada LOKASI di D
-                # A=1, B=2, C=3, D=4, E=5, F=6
                 ws.update_cell(idx_gsheet, 5, "Selesai") 
                 ws.update_cell(idx_gsheet, 6, current_time) 
+                return True
         except: pass
+    return False
 
-def save_to_cloud_callback(df_input, judul_terpilih):
+# Callback Download (Auto-Detect Title)
+def save_to_cloud_callback(df_input):
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         data_to_save = df_input.copy()
@@ -182,14 +180,24 @@ def save_to_cloud_callback(df_input, judul_terpilih):
         if final_cols:
             data_to_save = data_to_save[list(final_cols.keys())].rename(columns=final_cols)
             data_to_save.insert(0, 'TIMESTAMP', current_time)
+            
             sh = connect_to_gsheet()
             if sh:
                 ws_log = sh.worksheet(SHEET_HISTORY)
                 ws_log.append_rows(data_to_save.astype(str).values.tolist())
                 st.toast("✅ Log tersimpan!", icon="☁️")
-                if judul_terpilih and judul_terpilih != "Lainnya (Ketik Manual)":
-                    mark_training_complete(judul_terpilih)
-                    st.toast("✅ Status Kalender: Selesai!", icon="🎯")
+                
+                # --- AUTO-UPDATE STATUS KALENDER ---
+                # Ambil semua judul unik dari file peserta yang diupload
+                if 'DIKLAT' in data_to_save.columns:
+                    unique_titles = data_to_save['DIKLAT'].unique()
+                    updated_count = 0
+                    for judul in unique_titles:
+                        if mark_training_complete(judul):
+                            updated_count += 1
+                    
+                    if updated_count > 0:
+                        st.toast(f"✅ {updated_count} Pelatihan di Kalender ditandai Selesai!", icon="🎯")
             else: st.toast("⚠️ Gagal koneksi Cloud.", icon="📂")
     except Exception as e: st.toast(f"Error Database: {e}", icon="❌")
 
@@ -347,40 +355,16 @@ with tab_cal:
                 else: st.warning("Data kalender masih kosong.")
             except: st.warning(f"Sheet '{SHEET_KALENDER}' belum dibuat di Google Sheets.")
 
-# --- TAB GENERATOR ---
+# --- TAB GENERATOR (AUTO DETECT) ---
 with tab_gen:
-    # Logic Load Dropdown & Data
-    pilihan_diklat = ["Lainnya (Ketik Manual)"]
-    data_kalender_dict = {} # Dictionary untuk simpan detail (Tanggal/Lokasi) dari kalender
-    
-    sh = connect_to_gsheet()
-    if sh:
-        try:
-            ws = sh.worksheet(SHEET_KALENDER)
-            df_cal = pd.DataFrame(ws.get_all_records())
-            if not df_cal.empty:
-                # Filter yang belum selesai
-                pending_df = df_cal[df_cal['STATUS'] != 'Selesai']
-                pending_list = pending_df['JUDUL_PELATIHAN'].tolist()
-                pilihan_diklat = pending_list + pilihan_diklat
-                
-                # Simpan metadata untuk autofill
-                for _, row in pending_df.iterrows():
-                    data_kalender_dict[row['JUDUL_PELATIHAN']] = {
-                        'TANGGAL': row.get('RENCANA_TANGGAL', '-'),
-                        'LOKASI': row.get('LOKASI', '-')
-                    }
-        except: pass
-
     c_up, c_ttd, c_nd = st.columns([1.5, 1.5, 1.5])
     with c_up:
-        st.markdown("###### 1. Pilih Pelatihan")
-        selected_training = st.selectbox("Judul Pelatihan", pilihan_diklat)
+        st.markdown("###### 1. Upload Data")
         uploaded_file = st.file_uploader("Upload Excel Peserta", type=['xlsx'], label_visibility="collapsed", key=f"uploader_{st.session_state['uploader_key']}")
         
         sc1, sc2 = st.columns(2)
         with sc1:
-            df_dummy = pd.DataFrame({"JUDUL_PELATIHAN": ["Diklat A"], "TANGGAL_PELATIHAN": ["12-16 Jan 2026"], "TEMPAT": ["Pusdiklat"], "NO": [1], "NAMA PEGAWAI": ["Fajar"], "NIP": ["199901012024121001"], "PANGKAT": ["II/c"], "SATUAN KERJA": ["KPU Batam"]})
+            df_dummy = pd.DataFrame({"JUDUL_PELATIHAN": ["DTSS Kepabeanan"], "TANGGAL_PELATIHAN": ["12-16 Jan 2026"], "TEMPAT": ["Pusdiklat"], "NO": [1], "NAMA PEGAWAI": ["Fajar"], "NIP": ["199901012024121001"], "PANGKAT": ["II/c"], "SATUAN KERJA": ["KPU Batam"]})
             buffer = io.BytesIO(); 
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer: df_dummy.to_excel(writer, index=False)
             buffer.seek(0)
@@ -416,22 +400,23 @@ with tab_gen:
                 else: clean_cols[col] = upper_col 
             df_raw = df_raw.rename(columns=clean_cols).fillna("-")
             
-            # --- AUTOFILL LOGIC DARI KALENDER ---
-            if selected_training != "Lainnya (Ketik Manual)":
-                # 1. Override Judul
-                df_raw['JUDUL_PELATIHAN'] = selected_training
-                
-                # 2. Override Tanggal & Tempat (Jika ada di Kalender)
-                if selected_training in data_kalender_dict:
-                    info_cal = data_kalender_dict[selected_training]
-                    df_raw['TANGGAL_PELATIHAN'] = info_cal['TANGGAL']
-                    df_raw['TEMPAT'] = info_cal['LOKASI']
-
+            # Auto-Detect Info
             if 'NIP' in df_raw.columns:
                 df_raw['USIA'] = df_raw['NIP'].apply(calculate_age_from_nip)
                 df_raw['GENDER'] = df_raw['NIP'].apply(get_gender_from_nip)
             else:
                 df_raw['USIA'] = None; df_raw['GENDER'] = "Tidak Diketahui"
+
+            # Tampilkan Info Kalender (Jika Match)
+            sh = connect_to_gsheet()
+            if sh and 'JUDUL_PELATIHAN' in df_raw.columns:
+                try:
+                    ws = sh.worksheet(SHEET_KALENDER)
+                    data_cal = pd.DataFrame(ws.get_all_records())
+                    judul_peserta = df_raw['JUDUL_PELATIHAN'].iloc[0]
+                    if not data_cal.empty and judul_peserta in data_cal['JUDUL_PELATIHAN'].values:
+                        st.info(f"💡 Pelatihan '{judul_peserta}' terdeteksi di Kalender. Status akan diupdate saat download.")
+                except: pass
 
             st.markdown("###### 4. Preview & Edit Data")
             df_edited = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
@@ -443,14 +428,14 @@ with tab_gen:
             st.markdown("<br>", unsafe_allow_html=True)
             c_d1, c_d2 = st.columns(2)
             with c_d1: 
-                st.download_button("📄 Download Lampiran ND (.docx)", word_buffer, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited, selected_training))
+                st.download_button("📄 Download Lampiran ND (.docx)", word_buffer, f"Lampiran_{ts}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type="primary", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
             with c_d2: 
-                st.download_button("📦 Download Arsip ZIP", zip_buffer, f"Arsip_{ts}.zip", "application/zip", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited, selected_training))
+                st.download_button("📦 Download Arsip ZIP", zip_buffer, f"Arsip_{ts}.zip", "application/zip", use_container_width=True, on_click=save_to_cloud_callback, args=(df_edited,))
 
         except Exception as e:
             st.error(f"Terjadi kesalahan: {e}")
     else:
-        st.info("👈 Silakan pilih pelatihan dan upload file Excel peserta.")
+        st.info("👈 Silakan upload file Excel peserta.")
 
 # --- TAB DASHBOARD ---
 with tab_dash:
@@ -487,7 +472,7 @@ with tab_dash:
                 total_done = len(df_cal[df_cal['STATUS'] == 'Selesai'])
                 progress = total_done / total_plan if total_plan > 0 else 0
                 st.progress(progress, text=f"Realisasi: {total_done} dari {total_plan} Pelatihan ({progress:.1%})")
-                st.dataframe(df_cal[['JUDUL_PELATIHAN', 'RENCANA_TANGGAL', 'STATUS', 'REALISASI']], use_container_width=True)
+                st.dataframe(df_cal[['JUDUL_PELATIHAN', 'RENCANA_TANGGAL', 'LOKASI', 'STATUS', 'REALISASI']], use_container_width=True)
         except: st.info("Data Kalender belum tersedia.")
 
 # --- TAB DATABASE ---
