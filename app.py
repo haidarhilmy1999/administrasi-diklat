@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from docx import Document
-from docx.shared import Pt, Cm, RGBColor
+from docx.shared import Pt, Cm, Mm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
@@ -38,7 +38,6 @@ hide_st_style = """
             div[class*="viewerBadge"] {display: none !important;}
             .block-container {padding-top: 1rem;}
             
-            /* Styling Danger Zone */
             .danger-box {
                 border: 1px solid #ff4b4b;
                 padding: 10px;
@@ -71,10 +70,9 @@ def connect_to_gsheet():
     except: return None
 
 # =============================================================================
-# 2. LOGIKA DATABASE (UPDATE, RESET, CHECKLIST)
+# 2. LOGIKA DATABASE
 # =============================================================================
 
-# --- Format Tanggal ---
 def format_date_range(row):
     try:
         tgl_mulai = row['TANGGAL_MULAI']
@@ -85,7 +83,6 @@ def format_date_range(row):
         return str_mulai if str_mulai == str_selesai else f"{str_mulai} s.d. {str_selesai}"
     except: return "-"
 
-# --- Update Kalender (Import Excel) ---
 def update_calendar_db(df_new):
     sh = connect_to_gsheet()
     if sh:
@@ -142,7 +139,6 @@ def update_calendar_db(df_new):
             return False
     return False
 
-# --- Tandai Selesai ---
 def mark_training_complete(judul_pelatihan):
     sh = connect_to_gsheet()
     if sh:
@@ -160,7 +156,6 @@ def mark_training_complete(judul_pelatihan):
         except: pass
     return False
 
-# --- Callback Download ---
 def save_to_cloud_callback(df_input):
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
@@ -191,33 +186,25 @@ def save_to_cloud_callback(df_input):
             else: st.toast("⚠️ Gagal koneksi Cloud.", icon="📂")
     except Exception as e: st.toast(f"Error Database: {e}", icon="❌")
 
-# --- FITUR BARU: RESET STATUS KALENDER (FIXED SYNTAX) ---
 def reset_calendar_status():
     sh = connect_to_gsheet()
     if sh:
         try:
             ws = sh.worksheet(SHEET_KALENDER)
             all_values = ws.get_all_values()
-            
             if len(all_values) > 1: 
                 new_data = []
-                # Mulai dari baris ke-2 (index 1) karena baris 1 adalah header
                 for row in all_values[1:]:
-                    while len(row) < 6: row.append("") # Pastikan kolom cukup
-                    row[4] = "Pending"   # Reset Status
-                    row[5] = "-"         # Reset Realisasi
+                    while len(row) < 6: row.append("")
+                    row[4] = "Pending"
+                    row[5] = "-"
                     new_data.append(row)
-                
-                # Perbaikan Syntax Error Disini: Pastikan string f-string tertutup rapat
                 range_update = f"A2:F{len(all_values)}"
                 ws.update(range_name=range_update, values=new_data)
-                
                 st.success("✅ Status Kalender berhasil di-reset menjadi 'Pending'!")
-            else:
-                st.warning("Data kalender kosong.")
+            else: st.warning("Data kalender kosong.")
         except Exception as e: st.error(f"Gagal reset kalender: {e}")
 
-# --- FITUR BARU: HAPUS LOG PESERTA ---
 def clear_history_log():
     sh = connect_to_gsheet()
     if sh:
@@ -233,7 +220,7 @@ def reset_app():
     st.rerun()
 
 # =============================================================================
-# 3. FUNGSI UTILS & WORD GENERATOR
+# 3. FUNGSI UTILS & WORD GENERATOR (A4 + CUSTOM TTD)
 # =============================================================================
 def calculate_age_from_nip(nip_str):
     try:
@@ -256,71 +243,139 @@ def get_gender_from_nip(nip_str):
 def set_repeat_table_header(row):
     tr = row._tr; trPr = tr.get_or_add_trPr(); tblHeader = OxmlElement('w:tblHeader'); tblHeader.set(qn('w:val'), "true"); trPr.append(tblHeader)
 
+# --- FUNGSI WORD SINGLE (ZIP) ---
 def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     JENIS_FONT = 'Arial'; UKURAN_FONT = 11
     doc = Document(); style = doc.styles['Normal']; style.font.name = JENIS_FONT; style.font.size = Pt(UKURAN_FONT)
-    section = doc.sections[0]; section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54); section.left_margin = Cm(2.54); section.right_margin = Cm(2.54)
+    section = doc.sections[0]
+    section.page_width = Mm(210); section.page_height = Mm(297)
+    section.top_margin = Cm(2.5); section.bottom_margin = Cm(2.5)
+    section.left_margin = Cm(3.0); section.right_margin = Cm(2.5)
+
     header_table = doc.add_table(rows=4, cols=3); header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
-    header_table.columns[0].width = Cm(1.5); header_table.columns[2].width = Cm(4.5)
-    def isi_sel(r, c, text, size=9, bold=False):
+    header_table.columns[0].width = Cm(2.0); header_table.columns[2].width = Cm(5.0)
+    def isi_sel(r, c, text, size=11, bold=False):
         cell = header_table.cell(r, c); p = cell.paragraphs[0]; p.paragraph_format.space_after = Pt(0)
         run = p.add_run(text); run.font.name = JENIS_FONT; run.font.size = Pt(size); run.bold = bold
-    isi_sel(0, 0, "LAMPIRAN II", 11); header_table.cell(0, 2).merge(header_table.cell(0, 0)); header_table.cell(0,0).text="LAMPIRAN II"
-    isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); header_table.cell(1, 2).merge(header_table.cell(1, 0)); header_table.cell(1,0).text=f"Nota Dinas {jabatan_ttd}"
+    isi_sel(0, 0, "LAMPIRAN II"); header_table.cell(0, 2).merge(header_table.cell(0, 0))
+    isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", size=11); header_table.cell(1, 2).merge(header_table.cell(1, 0))
     isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val))
     isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val))
+    
     doc.add_paragraph(""); p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER; p.runs[0].bold = True
     info_table = doc.add_table(rows=3, cols=3); 
     infos = [("Nama Pelatihan", judul), ("Tanggal", tgl_pel), ("Lokasi", tempat_pel)]
     for r, (l, v) in enumerate(infos): info_table.cell(r,0).text = l; info_table.cell(r,1).text = ":"; info_table.cell(r,2).text = str(v)
+    
     doc.add_paragraph(""); table = doc.add_table(rows=2, cols=5); table.style = 'Table Grid'
     headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']; widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
-    for i in range(5): table.rows[0].cells[i].text = headers[i]; table.rows[0].cells[i].width = widths[i]; table.rows[0].cells[i].paragraphs[0].runs[0].bold = True
+    for i in range(5): 
+        table.rows[0].cells[i].text = headers[i]; table.rows[0].cells[i].width = widths[i]; table.rows[0].cells[i].paragraphs[0].runs[0].bold = True
     vals = [row.get('NO','-'), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
     for i in range(5): table.rows[1].cells[i].text = str(vals[i])
-    doc.add_paragraph(""); ttd_table = doc.add_table(rows=1, cols=2)
-    p = ttd_table.cell(0, 1).paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.add_run(f"{jabatan_ttd},\n\n\n\nDitandatangani secara elektronik\n{nama_ttd}")
+    
+    doc.add_paragraph("")
+    ttd_table = doc.add_table(rows=1, cols=2); ttd_table.autofit = False
+    ttd_table.columns[0].width = Cm(8.0); ttd_table.columns[1].width = Cm(7.5)
+    
+    # --- CUSTOM TANDA TANGAN (FILE ZIP) ---
+    p = ttd_table.cell(0, 1).paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT # Rata Kiri
+    
+    # Baris 1: Jabatan
+    p.add_run(f"{jabatan_ttd},")
+    # Baris 2: Spasi Kosong (Diperbanyak)
+    p.add_run("\n\n\n\n\n\n") 
+    # Baris 3: Teks Elektronik (Abu Muda, Font 10)
+    run_elec = p.add_run("Ditandatangani secara elektronik")
+    run_elec.font.size = Pt(10)
+    run_elec.font.color.rgb = RGBColor(160, 160, 160) # Abu Muda
+    # Baris 4: Nama
+    p.add_run(f"\n{nama_ttd}")
+    
     f_out = io.BytesIO(); doc.save(f_out); f_out.seek(0); return f_out
 
+# --- FUNGSI WORD COMBINED (SINGLE TTD AT END) ---
 def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     JENIS_FONT = 'Arial'; UKURAN_FONT = 11; output = io.BytesIO(); doc = Document()
     style = doc.styles['Normal']; style.font.name = JENIS_FONT; style.font.size = Pt(UKURAN_FONT)
-    section = doc.sections[0]; section.top_margin = Cm(2.54); section.bottom_margin = Cm(2.54); section.left_margin = Cm(2.54); section.right_margin = Cm(2.54)
+    
+    section = doc.sections[0]
+    section.page_width = Mm(210); section.page_height = Mm(297)
+    section.top_margin = Cm(2.5); section.bottom_margin = Cm(2.5)
+    section.left_margin = Cm(3.0); section.right_margin = Cm(2.5)
+
     p_foot = section.footer.paragraphs[0]; p_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER; run = p_foot.add_run(); run._r.append(OxmlElement('w:fldChar')); run._r[-1].set(qn('w:fldCharType'), 'begin'); run._r.append(OxmlElement('w:instrText')); run._r[-1].text = "PAGE"; run._r.append(OxmlElement('w:fldChar')); run._r[-1].set(qn('w:fldCharType'), 'end')
+    
     col_judul = 'JUDUL_PELATIHAN' if 'JUDUL_PELATIHAN' in df.columns else df.columns[0]
-    kelompok = df.groupby(col_judul); counter = 0
+    kelompok = df.groupby(col_judul)
+    total_groups = len(kelompok) 
+    counter = 0 
+    
     for judul, group in kelompok:
-        counter += 1; first = group.iloc[0]
-        header_table = doc.add_table(rows=4, cols=3); header_table.autofit = False; header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
-        header_table.columns[0].width = Cm(1.5); header_table.columns[1].width = Cm(0.3); header_table.columns[2].width = Cm(4.5)
-        def isi_sel(r, c, text, size=9, bold=False):
+        counter += 1
+        first = group.iloc[0]
+        
+        header_table = doc.add_table(rows=4, cols=3); header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
+        header_table.columns[0].width = Cm(2.0); header_table.columns[2].width = Cm(5.0)
+        def isi_sel(r, c, text, size=11, bold=False):
             cell = header_table.cell(r, c); p = cell.paragraphs[0]; p.paragraph_format.space_after = Pt(0)
             run = p.add_run(text); run.font.name = JENIS_FONT; run.font.size = Pt(size); run.bold = bold
-            return cell
-        c = isi_sel(0, 0, "LAMPIRAN II", 11); c.merge(header_table.cell(0, 2))
-        c = isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", 9); c.merge(header_table.cell(1, 2))
+        isi_sel(0, 0, "LAMPIRAN II"); header_table.cell(0, 2).merge(header_table.cell(0, 0))
+        isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", size=11); header_table.cell(1, 2).merge(header_table.cell(1, 0))
         isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val))
         isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val))
-        doc.add_paragraph(""); p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER; p.runs[0].bold = True
-        info_table = doc.add_table(rows=3, cols=3); info_table.autofit = False
-        info_table.columns[0].width = Cm(4.0); info_table.columns[1].width = Cm(0.5); info_table.columns[2].width = Cm(11.5)
         
+        doc.add_paragraph("")
+        p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER; p.runs[0].bold = True
+        
+        info_table = doc.add_table(rows=3, cols=3); info_table.autofit = False
+        info_table.columns[0].width = Cm(4.0); info_table.columns[1].width = Cm(0.5); info_table.columns[2].width = Cm(11.0)
         infos = [("Nama Pelatihan", judul), ("Tanggal", first.get('TANGGAL_PELATIHAN','-')), ("Lokasi", first.get('TEMPAT','-'))]
         for r, (l, v) in enumerate(infos): info_table.cell(r,0).text = l; info_table.cell(r,1).text = ":"; info_table.cell(r,2).text = str(v)
         
-        doc.add_paragraph(""); table = doc.add_table(rows=1, cols=5); table.style = 'Table Grid'; table.autofit = False
-        headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']; widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
+        doc.add_paragraph("")
+        table = doc.add_table(rows=1, cols=5); table.style = 'Table Grid'; table.autofit = False
+        widths = [Cm(1.0), Cm(5.0), Cm(4.0), Cm(2.5), Cm(3.0)]
+        
         hdr_cells = table.rows[0].cells; set_repeat_table_header(table.rows[0])
-        for i in range(5): hdr_cells[i].width = widths[i]; hdr_cells[i].text = headers[i]; hdr_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER; hdr_cells[i].paragraphs[0].runs[0].bold = True
+        headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT', 'UNIT KERJA']
+        for i in range(5): 
+            hdr_cells[i].width = widths[i]
+            p = hdr_cells[i].paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(headers[i]); run.bold = True
+            
         for idx, row in group.iterrows():
-            row_cells = table.add_row().cells; vals = [row.get('NO', idx+1), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
-            for i in range(5): row_cells[i].width = widths[i]; row_cells[i].text = str(vals[i]); row_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER; row_cells[i].paragraphs[0].paragraph_format.space_after = Pt(2)
-        doc.add_paragraph(""); ttd_table = doc.add_table(rows=1, cols=2); ttd_table.autofit = False
-        ttd_table.columns[0].width = Cm(9.0); ttd_table.columns[1].width = Cm(7.0)
-        p = ttd_table.cell(0, 1).paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER; p.paragraph_format.line_spacing = 1.0 
-        p.add_run(f"{jabatan_ttd},\n\n\n\n\nDitandatangani secara elektronik\n{nama_ttd}"); 
-        if counter < len(kelompok): doc.add_page_break()
+            row_cells = table.add_row().cells
+            vals = [row.get('NO', idx+1), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
+            for i in range(5): 
+                row_cells[i].width = widths[i]; row_cells[i].text = str(vals[i])
+                row_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        
+        doc.add_paragraph("")
+        
+        # --- CUSTOM TANDA TANGAN (COMBINED) ---
+        if counter == total_groups:
+            ttd_table = doc.add_table(rows=1, cols=2); ttd_table.autofit = False
+            ttd_table.columns[0].width = Cm(8.0); ttd_table.columns[1].width = Cm(7.5)
+            
+            p = ttd_table.cell(0, 1).paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT # Rata Kiri
+            
+            # Baris 1: Jabatan
+            p.add_run(f"{jabatan_ttd},")
+            # Baris 2: Spasi Kosong (Diperbanyak)
+            p.add_run("\n\n\n\n\n\n") 
+            # Baris 3: Teks Elektronik (Abu Muda, Font 10)
+            run_elec = p.add_run("Ditandatangani secara elektronik")
+            run_elec.font.size = Pt(10)
+            run_elec.font.color.rgb = RGBColor(160, 160, 160) # Abu Muda
+            # Baris 4: Nama
+            p.add_run(f"\n{nama_ttd}")
+        
+        if counter < total_groups: 
+            doc.add_page_break()
+
     doc.save(output); output.seek(0); return output
 
 def generate_zip_files(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
