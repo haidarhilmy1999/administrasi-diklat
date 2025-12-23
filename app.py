@@ -220,7 +220,7 @@ def reset_app():
     st.rerun()
 
 # =============================================================================
-# 3. FUNGSI UTILS & WORD GENERATOR (A4 + CUSTOM HEADER)
+# 3. FUNGSI UTILS & WORD GENERATOR (A4 + FIX HEADER & NUMBERING)
 # =============================================================================
 def calculate_age_from_nip(nip_str):
     try:
@@ -252,7 +252,6 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     section.top_margin = Cm(2.5); section.bottom_margin = Cm(2.5)
     section.left_margin = Cm(3.0); section.right_margin = Cm(2.5)
 
-    # Header dengan Font Size 5 (Kecil)
     header_table = doc.add_table(rows=4, cols=3); header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
     header_table.columns[0].width = Cm(2.0); header_table.columns[2].width = Cm(5.0)
     
@@ -260,11 +259,10 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
         cell = header_table.cell(r, c); p = cell.paragraphs[0]; p.paragraph_format.space_after = Pt(0)
         run = p.add_run(text); run.font.name = JENIS_FONT; run.font.size = Pt(size); run.bold = bold
     
-    # Semua header di set size=5 sesuai request
-    isi_sel(0, 0, "LAMPIRAN II", size=5); header_table.cell(0, 2).merge(header_table.cell(0, 0))
-    isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", size=5); header_table.cell(1, 2).merge(header_table.cell(1, 0))
-    isi_sel(2, 0, "Nomor", size=5); isi_sel(2, 1, ":", size=5); isi_sel(2, 2, str(no_nd_val), size=5)
-    isi_sel(3, 0, "Tanggal", size=5); isi_sel(3, 1, ":", size=5); isi_sel(3, 2, str(tgl_nd_val), size=5)
+    isi_sel(0, 0, "LAMPIRAN II"); header_table.cell(0, 2).merge(header_table.cell(0, 0))
+    isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", size=11); header_table.cell(1, 2).merge(header_table.cell(1, 0))
+    isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val), size=8) # Ukuran 8
+    isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val), size=8) # Ukuran 8
     
     doc.add_paragraph(""); p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER; p.runs[0].bold = True
     info_table = doc.add_table(rows=3, cols=3); 
@@ -275,7 +273,9 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     headers = ['NO', 'NAMA PEGAWAI', 'NIP', 'PANGKAT - GOL', 'SATUAN KERJA']; widths = [Cm(1.0), Cm(5.0), Cm(3.8), Cm(3.5), Cm(3.5)]
     for i in range(5): 
         table.rows[0].cells[i].text = headers[i]; table.rows[0].cells[i].width = widths[i]; table.rows[0].cells[i].paragraphs[0].runs[0].bold = True
-    vals = [row.get('NO','-'), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
+    
+    # Nomor selalu 1 karena single doc
+    vals = ["1", row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
     for i in range(5): table.rows[1].cells[i].text = str(vals[i])
     
     doc.add_paragraph("")
@@ -283,17 +283,15 @@ def create_single_document(row, judul, tgl_pel, tempat_pel, nama_ttd, jabatan_tt
     ttd_table.columns[0].width = Cm(8.0); ttd_table.columns[1].width = Cm(7.5)
     
     p = ttd_table.cell(0, 1).paragraphs[0]
-    p.alignment = WD_ALIGN_PARAGRAPH.LEFT 
-    p.add_run(f"{jabatan_ttd},")
-    p.add_run("\n\n\n\n\n\n") 
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p.add_run(f"{jabatan_ttd},"); p.add_run("\n\n\n\n\n\n") 
     run_elec = p.add_run("Ditandatangani secara elektronik")
-    run_elec.font.size = Pt(10)
-    run_elec.font.color.rgb = RGBColor(160, 160, 160) 
+    run_elec.font.size = Pt(10); run_elec.font.color.rgb = RGBColor(160, 160, 160)
     p.add_run(f"\n{nama_ttd}")
     
     f_out = io.BytesIO(); doc.save(f_out); f_out.seek(0); return f_out
 
-# --- FUNGSI WORD COMBINED (HEADER ONCE + SINGLE TTD) ---
+# --- FUNGSI WORD COMBINED (FIXED HEADER & NUMBERING) ---
 def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
     JENIS_FONT = 'Arial'; UKURAN_FONT = 11; output = io.BytesIO(); doc = Document()
     style = doc.styles['Normal']; style.font.name = JENIS_FONT; style.font.size = Pt(UKURAN_FONT)
@@ -305,19 +303,17 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
 
     p_foot = section.footer.paragraphs[0]; p_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER; run = p_foot.add_run(); run._r.append(OxmlElement('w:fldChar')); run._r[-1].set(qn('w:fldCharType'), 'begin'); run._r.append(OxmlElement('w:instrText')); run._r[-1].text = "PAGE"; run._r.append(OxmlElement('w:fldChar')); run._r[-1].set(qn('w:fldCharType'), 'end')
     
-    # --- HEADER POJOK KANAN (HANYA MUNCUL SEKALI DI HALAMAN PERTAMA) ---
+    # --- HEADER DISINI (SEKALI SAJA DI ATAS) ---
     header_table = doc.add_table(rows=4, cols=3); header_table.alignment = WD_TABLE_ALIGNMENT.RIGHT 
     header_table.columns[0].width = Cm(2.0); header_table.columns[2].width = Cm(5.0)
-    
     def isi_sel(r, c, text, size=11, bold=False):
         cell = header_table.cell(r, c); p = cell.paragraphs[0]; p.paragraph_format.space_after = Pt(0)
         run = p.add_run(text); run.font.name = JENIS_FONT; run.font.size = Pt(size); run.bold = bold
     
-    # Set Size 5 untuk seluruh blok header
-    isi_sel(0, 0, "LAMPIRAN II", size=5); header_table.cell(0, 2).merge(header_table.cell(0, 0))
-    isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", size=5); header_table.cell(1, 2).merge(header_table.cell(1, 0))
-    isi_sel(2, 0, "Nomor", size=5); isi_sel(2, 1, ":", size=5); isi_sel(2, 2, str(no_nd_val), size=5)
-    isi_sel(3, 0, "Tanggal", size=5); isi_sel(3, 1, ":", size=5); isi_sel(3, 2, str(tgl_nd_val), size=5)
+    isi_sel(0, 0, "LAMPIRAN II"); header_table.cell(0, 2).merge(header_table.cell(0, 0))
+    isi_sel(1, 0, f"Nota Dinas {jabatan_ttd}", size=11); header_table.cell(1, 2).merge(header_table.cell(1, 0))
+    isi_sel(2, 0, "Nomor"); isi_sel(2, 1, ":"); isi_sel(2, 2, str(no_nd_val), size=8) # FONT 8
+    isi_sel(3, 0, "Tanggal"); isi_sel(3, 1, ":"); isi_sel(3, 2, str(tgl_nd_val), size=8) # FONT 8
     
     col_judul = 'JUDUL_PELATIHAN' if 'JUDUL_PELATIHAN' in df.columns else df.columns[0]
     kelompok = df.groupby(col_judul)
@@ -328,6 +324,7 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
         counter += 1
         first = group.iloc[0]
         
+        # Mulai Konten Per Pelatihan
         doc.add_paragraph("")
         p = doc.add_paragraph("DAFTAR PESERTA PELATIHAN"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER; p.runs[0].bold = True
         
@@ -347,28 +344,26 @@ def generate_word_combined(df, nama_ttd, jabatan_ttd, no_nd_val, tgl_nd_val):
             p = hdr_cells[i].paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             run = p.add_run(headers[i]); run.bold = True
             
-        for idx, row in group.iterrows():
+        # --- RESET NOMOR URUT (ENUMERATE) ---
+        for i, (idx, row) in enumerate(group.iterrows(), start=1):
             row_cells = table.add_row().cells
-            vals = [row.get('NO', idx+1), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
-            for i in range(5): 
-                row_cells[i].width = widths[i]; row_cells[i].text = str(vals[i])
-                row_cells[i].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            vals = [str(i), row.get('NAMA','-'), row.get('NIP','-'), row.get('PANGKAT','-'), row.get('SATKER','-')]
+            for k in range(5): 
+                row_cells[k].width = widths[k]; row_cells[k].text = str(vals[k])
+                row_cells[k].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         
         doc.add_paragraph("")
         
-        # --- CUSTOM TANDA TANGAN (HANYA DI GROUP TERAKHIR) ---
+        # Tanda Tangan (Hanya di akhir)
         if counter == total_groups:
             ttd_table = doc.add_table(rows=1, cols=2); ttd_table.autofit = False
             ttd_table.columns[0].width = Cm(8.0); ttd_table.columns[1].width = Cm(7.5)
             
             p = ttd_table.cell(0, 1).paragraphs[0]
-            p.alignment = WD_ALIGN_PARAGRAPH.LEFT # Rata Kiri
-            
-            p.add_run(f"{jabatan_ttd},")
-            p.add_run("\n\n\n\n\n\n") 
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p.add_run(f"{jabatan_ttd},"); p.add_run("\n\n\n\n\n\n") 
             run_elec = p.add_run("Ditandatangani secara elektronik")
-            run_elec.font.size = Pt(10)
-            run_elec.font.color.rgb = RGBColor(160, 160, 160) # Abu Muda
+            run_elec.font.size = Pt(10); run_elec.font.color.rgb = RGBColor(160, 160, 160)
             p.add_run(f"\n{nama_ttd}")
         
         if counter < total_groups: 
